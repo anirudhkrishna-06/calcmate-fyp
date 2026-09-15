@@ -1,0 +1,302 @@
+{
+  "k": 3,
+  "model": "all-MiniLM-L6-v2",
+  "evaluated": 13,
+  "total_questions": 15,
+  "skipped": [
+    {
+      "id": "Q2",
+      "concept_id": "M508"
+    },
+    {
+      "id": "Q12",
+      "concept_id": "M508"
+    }
+  ],
+  "overall": {
+    "generic": {
+      "precision": 0.23076923076923078,
+      "hit_rate": 0.38461538461538464,
+      "mrr": 0.3076923076923077,
+      "n": 13
+    },
+    "curriculum": {
+      "precision": 0.6923076923076923,
+      "hit_rate": 0.7692307692307693,
+      "mrr": 0.7307692307692307,
+      "n": 13
+    }
+  },
+  "breakdown": {
+    "grade": {
+      "3": {
+        "generic": {
+          "precision": 0.08333333333333333,
+          "hit_rate": 0.25,
+          "mrr": 0.25,
+          "n": 4
+        },
+        "curriculum": {
+          "precision": 0.5833333333333334,
+          "hit_rate": 0.75,
+          "mrr": 0.625,
+          "n": 4
+        }
+      },
+      "4": {
+        "generic": {
+          "precision": 0.2857142857142857,
+          "hit_rate": 0.42857142857142855,
+          "mrr": 0.2857142857142857,
+          "n": 7
+        },
+        "curriculum": {
+          "precision": 0.8095238095238095,
+          "hit_rate": 0.8571428571428571,
+          "mrr": 0.8571428571428571,
+          "n": 7
+        }
+      },
+      "5": {
+        "generic": {
+          "precision": 0.3333333333333333,
+          "hit_rate": 0.5,
+          "mrr": 0.5,
+          "n": 2
+        },
+        "curriculum": {
+          "precision": 0.5,
+          "hit_rate": 0.5,
+          "mrr": 0.5,
+          "n": 2
+        }
+      }
+    },
+    "subject": {
+      "Math": {
+        "generic": {
+          "precision": 0.23076923076923078,
+          "hit_rate": 0.38461538461538464,
+          "mrr": 0.3076923076923077,
+          "n": 13
+        },
+        "curriculum": {
+          "precision": 0.6923076923076923,
+          "hit_rate": 0.7692307692307693,
+          "mrr": 0.7307692307692307,
+          "n": 13
+        }
+      }
+    }
+  },
+  "per_question": [
+    {
+      "id": "Q1",
+      "concept_id": "M408",
+      "grade": 4,
+      "subject": "Math",
+      "generic": {
+        "precision": 0.0,
+        "hit_rate": 0.0,
+        "mrr": 0.0
+      },
+      "curriculum": {
+        "precision": 0.6666666666666666,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      }
+    },
+    {
+      "id": "Q3",
+      "concept_id": "M407",
+      "grade": 4,
+      "subject": "Math",
+      "generic": {
+        "precision": 0.0,
+        "hit_rate": 0.0,
+        "mrr": 0.0
+      },
+      "curriculum": {
+        "precision": 1.0,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      }
+    },
+    {
+      "id": "Q4",
+      "concept_id": "M409",
+      "grade": 4,
+      "subject": "Math",
+      "generic": {
+        "precision": 0.0,
+        "hit_rate": 0.0,
+        "mrr": 0.0
+      },
+      "curriculum": {
+        "precision": 1.0,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      }
+    },
+    {
+      "id": "Q5",
+      "concept_id": "M406",
+      "grade": 4,
+      "subject": "Math",
+      "generic": {
+        "precision": 0.0,
+        "hit_rate": 0.0,
+        "mrr": 0.0
+      },
+      "curriculum": {
+        "precision": 1.0,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      }
+    },
+    {
+      "id": "Q6",
+      "concept_id": "M302",
+      "grade": 3,
+      "subject": "Math",
+      "generic": {
+        "precision": 0.0,
+        "hit_rate": 0.0,
+        "mrr": 0.0
+      },
+      "curriculum": {
+        "precision": 0.3333333333333333,
+        "hit_rate": 1.0,
+        "mrr": 0.5
+      }
+    },
+    {
+      "id": "Q7",
+      "concept_id": "M307",
+      "grade": 3,
+      "subject": "Math",
+      "generic": {
+        "precision": 0.0,
+        "hit_rate": 0.0,
+        "mrr": 0.0
+      },
+      "curriculum": {
+        "precision": 1.0,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      }
+    },
+    {
+      "id": "Q8",
+      "concept_id": "M503",
+      "grade": 5,
+      "subject": "Math",
+      "generic": {
+        "precision": 0.6666666666666666,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      },
+      "curriculum": {
+        "precision": 1.0,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      }
+    },
+    {
+      "id": "Q9",
+      "concept_id": "M504",
+      "grade": 5,
+      "subject": "Math",
+      "generic": {
+        "precision": 0.0,
+        "hit_rate": 0.0,
+        "mrr": 0.0
+      },
+      "curriculum": {
+        "precision": 0.0,
+        "hit_rate": 0.0,
+        "mrr": 0.0
+      }
+    },
+    {
+      "id": "Q10",
+      "concept_id": "M412",
+      "grade": 4,
+      "subject": "Math",
+      "generic": {
+        "precision": 0.3333333333333333,
+        "hit_rate": 1.0,
+        "mrr": 0.5
+      },
+      "curriculum": {
+        "precision": 1.0,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      }
+    },
+    {
+      "id": "Q11",
+      "concept_id": "M412",
+      "grade": 4,
+      "subject": "Math",
+      "generic": {
+        "precision": 0.6666666666666666,
+        "hit_rate": 1.0,
+        "mrr": 0.5
+      },
+      "curriculum": {
+        "precision": 1.0,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      }
+    },
+    {
+      "id": "Q13",
+      "concept_id": "M411",
+      "grade": 4,
+      "subject": "Math",
+      "generic": {
+        "precision": 1.0,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      },
+      "curriculum": {
+        "precision": 0.0,
+        "hit_rate": 0.0,
+        "mrr": 0.0
+      }
+    },
+    {
+      "id": "Q14",
+      "concept_id": "M304",
+      "grade": 3,
+      "subject": "Math",
+      "generic": {
+        "precision": 0.0,
+        "hit_rate": 0.0,
+        "mrr": 0.0
+      },
+      "curriculum": {
+        "precision": 0.0,
+        "hit_rate": 0.0,
+        "mrr": 0.0
+      }
+    },
+    {
+      "id": "Q15",
+      "concept_id": "M315",
+      "grade": 3,
+      "subject": "Math",
+      "generic": {
+        "precision": 0.3333333333333333,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      },
+      "curriculum": {
+        "precision": 1.0,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      }
+    }
+  ]
+}

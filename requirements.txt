@@ -1,0 +1,4 @@
+faiss-cpu
+networkx 
+sentence-transformers 
+numpy

@@ -1,0 +1,79 @@
+id,grade,subject,unit,concept,prerequisites
+M301,3,Math,Numbers,Number recognition up to 1000,
+M302,3,Math,Numbers,Place value (ones/tens/hundreds),M301
+M303,3,Math,Numbers,Addition without carrying,M302
+M304,3,Math,Numbers,Addition with carrying,M303
+M305,3,Math,Numbers,Subtraction without borrowing,M302
+M306,3,Math,Numbers,Subtraction with borrowing,M305
+M307,3,Math,Numbers,Multiplication as repeated addition,M304
+M308,3,Math,Numbers,Multiplication tables 2-10,M307
+M309,3,Math,Geometry,Basic shapes recognition,
+M310,3,Math,Geometry,Sides and corners,M309
+M311,3,Math,Measurement,Length using non-standard units,
+M312,3,Math,Measurement,Length using standard units (cm/m),M311
+M313,3,Math,Measurement,Weight basics,
+M314,3,Math,Measurement,Time - reading a clock (hour),
+M315,3,Math,Measurement,Time - reading a clock (minutes),M314
+M316,3,Math,Geometry,Symmetry and patterns,M309
+M317,3,Math,Numbers,Number patterns and sequences,M301
+M318,3,Math,Measurement,Capacity and volume basics,
+M319,3,Math,Data Handling,Pictographs and simple charts,
+M320,3,Math,Numbers,Division as equal sharing (basic),M308
+M401,4,Math,Numbers,Numbers up to 10000,M302
+M402,4,Math,Numbers,Multiplication of 2-digit numbers,M308
+M403,4,Math,Numbers,Division as equal sharing,M308
+M404,4,Math,Numbers,Division with remainder,M403
+M405,4,Math,Numbers,Factors and multiples,M308
+M406,4,Math,Fractions,Equal parts of a whole,
+M407,4,Math,Fractions,Fraction representation (numerator/denominator),M406
+M408,4,Math,Fractions,Equivalent fractions,M407
+M409,4,Math,Fractions,Comparing fractions,M407
+M410,4,Math,Geometry,Lines and line segments,M310
+M411,4,Math,Geometry,Angles - basic types,M410
+M412,4,Math,Measurement,Perimeter of simple shapes,M312
+M414,4,Math,Measurement,Time - duration and calendar,M315
+M415,4,Math,Numbers,Large numbers - reading and writing,M401
+M416,4,Math,Numbers,Addition and subtraction of large numbers,M401
+M417,4,Math,Measurement,Weight - kg and g,M313
+M418,4,Math,Measurement,Capacity - litres and millilitres,M318
+M420,4,Math,Geometry,Symmetry in shapes,M316
+M421,4,Math,Data Handling,Bar graphs and pictographs,M319
+# ---- REMOVED (no PDF in corpus) ----
+# M413 Area using unit squares - only in demm106 which is length chapter
+# M419 2D and 3D shapes - not covered in Maths Mela Grade 4
+# M422 Rounding numbers - not in corpus
+# M423 Roman numerals - not in Maths Mela
+# M424 Money - not in corpus
+# M425 Tessellations - not in corpus (remove if not covered)
+
+M501,5,Math,Numbers,Numbers up to 1 lakh,M401
+M502,5,Math,Numbers,Multiplication of large numbers,M402
+M503,5,Math,Numbers,Long division,M404
+M504,5,Math,Numbers,HCF and LCM,M405
+M505,5,Math,Fractions,Addition of fractions (like denominators),M408
+M506,5,Math,Fractions,Addition of fractions (unlike denominators),M505
+M507,5,Math,Fractions,Subtraction of fractions,M505
+M511,5,Math,Geometry,Types of triangles,M411
+M512,5,Math,Geometry,Perimeter and area of rectangles,M412
+M513,5,Math,Measurement,Volume basics,M412
+M514,5,Math,Measurement,Unit conversion (length/weight/capacity),M312;M313
+M515,5,Math,Numbers,Numbers up to 1 crore,M501
+M516,5,Math,Numbers,Estimation and approximation,M501
+M517,5,Math,Fractions,Multiplication of fractions,M408;M505
+M518,5,Math,Fractions,Division of fractions,M517
+M521,5,Math,Geometry,Types of quadrilaterals,M511
+M522,5,Math,Geometry,Area of triangles and parallelograms,M512
+M523,5,Math,Geometry,"Circles - radius, diameter, circumference",M511
+M524,5,Math,Geometry,"3D shapes - cube, cuboid, cylinder",M309
+M525,5,Math,Measurement,Volume of cube and cuboid,M524
+M526,5,Math,Measurement,"Speed, distance and time",M514
+M529,5,Math,Numbers,BODMAS rule,M502;M503
+M530,5,Math,Numbers,Prime and composite numbers,M405
+# ---- REMOVED (only covered by foreign-edition PDF or absent) ----
+# M508 Fractions to decimals - needs real Maths Mela decimals chapter
+# M509 Decimal place value - same
+# M510 Addition and subtraction of decimals - same
+# M519 Multiplication of decimals - same
+# M520 Division of decimals - same
+# M527 Bar graphs and double bar graphs - needs eemm115.pdf
+# M528 Mean and median - not in Maths Mela Grade 5
