@@ -1,0 +1,11 @@
+id,category,question,grade,subject,concept_id,gold_chunk_id
+H1,concept_explanation,What is the place value of each digit in a three-digit number?,3,Math,M302,
+H2,example_request,What are the times tables of 6 and 8?,3,Math,M308,
+H3,concept_explanation,How do we read the hour hand on a clock?,3,Math,M314,
+H4,concept_explanation,What is a pictograph?,3,Math,M319,
+H5,concept_explanation,How do we read and write numbers up to 10000?,4,Math,M401,
+H6,example_request,How do we show one-half and one-fourth of a whole?,4,Math,M406,
+H7,concept_explanation,How do we find equivalent fractions of a given fraction?,4,Math,M408,
+H8,concept_explanation,How do we add two fractions with the same denominator?,5,Math,M505,
+H9,concept_explanation,How do we find the perimeter of a rectangle?,5,Math,M512,
+H10,example_request,How do we convert between different units of time (minutes and seconds)?,5,Math,M514,
