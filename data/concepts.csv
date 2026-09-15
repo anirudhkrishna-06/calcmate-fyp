@@ -38,14 +38,6 @@ M417,4,Math,Measurement,Weight - kg and g,M313
 M418,4,Math,Measurement,Capacity - litres and millilitres,M318
 M420,4,Math,Geometry,Symmetry in shapes,M316
 M421,4,Math,Data Handling,Bar graphs and pictographs,M319
-# ---- REMOVED (no PDF in corpus) ----
-# M413 Area using unit squares - only in demm106 which is length chapter
-# M419 2D and 3D shapes - not covered in Maths Mela Grade 4
-# M422 Rounding numbers - not in corpus
-# M423 Roman numerals - not in Maths Mela
-# M424 Money - not in corpus
-# M425 Tessellations - not in corpus (remove if not covered)
-
 M501,5,Math,Numbers,Numbers up to 1 lakh,M401
 M502,5,Math,Numbers,Multiplication of large numbers,M402
 M503,5,Math,Numbers,Long division,M404
@@ -69,11 +61,3 @@ M525,5,Math,Measurement,Volume of cube and cuboid,M524
 M526,5,Math,Measurement,"Speed, distance and time",M514
 M529,5,Math,Numbers,BODMAS rule,M502;M503
 M530,5,Math,Numbers,Prime and composite numbers,M405
-# ---- REMOVED (only covered by foreign-edition PDF or absent) ----
-# M508 Fractions to decimals - needs real Maths Mela decimals chapter
-# M509 Decimal place value - same
-# M510 Addition and subtraction of decimals - same
-# M519 Multiplication of decimals - same
-# M520 Division of decimals - same
-# M527 Bar graphs and double bar graphs - needs eemm115.pdf
-# M528 Mean and median - not in Maths Mela Grade 5
