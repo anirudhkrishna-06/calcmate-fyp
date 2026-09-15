@@ -1,0 +1,245 @@
+{
+  "k": 3,
+  "model": "all-MiniLM-L6-v2",
+  "evaluated": 10,
+  "total_questions": 10,
+  "skipped": [],
+  "overall": {
+    "generic": {
+      "precision": 0.3333333333333333,
+      "hit_rate": 0.5,
+      "mrr": 0.5,
+      "n": 10
+    },
+    "curriculum": {
+      "precision": 0.7666666666666667,
+      "hit_rate": 0.9,
+      "mrr": 0.9,
+      "n": 10
+    }
+  },
+  "breakdown": {
+    "grade": {
+      "3": {
+        "generic": {
+          "precision": 0.25,
+          "hit_rate": 0.5,
+          "mrr": 0.5,
+          "n": 4
+        },
+        "curriculum": {
+          "precision": 0.6666666666666666,
+          "hit_rate": 0.75,
+          "mrr": 0.75,
+          "n": 4
+        }
+      },
+      "4": {
+        "generic": {
+          "precision": 0.0,
+          "hit_rate": 0.0,
+          "mrr": 0.0,
+          "n": 3
+        },
+        "curriculum": {
+          "precision": 0.6666666666666666,
+          "hit_rate": 1.0,
+          "mrr": 1.0,
+          "n": 3
+        }
+      },
+      "5": {
+        "generic": {
+          "precision": 0.7777777777777778,
+          "hit_rate": 1.0,
+          "mrr": 1.0,
+          "n": 3
+        },
+        "curriculum": {
+          "precision": 1.0,
+          "hit_rate": 1.0,
+          "mrr": 1.0,
+          "n": 3
+        }
+      }
+    },
+    "subject": {
+      "Math": {
+        "generic": {
+          "precision": 0.3333333333333333,
+          "hit_rate": 0.5,
+          "mrr": 0.5,
+          "n": 10
+        },
+        "curriculum": {
+          "precision": 0.7666666666666667,
+          "hit_rate": 0.9,
+          "mrr": 0.9,
+          "n": 10
+        }
+      }
+    }
+  },
+  "per_question": [
+    {
+      "id": "H1",
+      "concept_id": "M302",
+      "grade": 3,
+      "subject": "Math",
+      "generic": {
+        "precision": 0.3333333333333333,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      },
+      "curriculum": {
+        "precision": 0.6666666666666666,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      }
+    },
+    {
+      "id": "H2",
+      "concept_id": "M308",
+      "grade": 3,
+      "subject": "Math",
+      "generic": {
+        "precision": 0.0,
+        "hit_rate": 0.0,
+        "mrr": 0.0
+      },
+      "curriculum": {
+        "precision": 1.0,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      }
+    },
+    {
+      "id": "H3",
+      "concept_id": "M314",
+      "grade": 3,
+      "subject": "Math",
+      "generic": {
+        "precision": 0.6666666666666666,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      },
+      "curriculum": {
+        "precision": 1.0,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      }
+    },
+    {
+      "id": "H4",
+      "concept_id": "M319",
+      "grade": 3,
+      "subject": "Math",
+      "generic": {
+        "precision": 0.0,
+        "hit_rate": 0.0,
+        "mrr": 0.0
+      },
+      "curriculum": {
+        "precision": 0.0,
+        "hit_rate": 0.0,
+        "mrr": 0.0
+      }
+    },
+    {
+      "id": "H5",
+      "concept_id": "M401",
+      "grade": 4,
+      "subject": "Math",
+      "generic": {
+        "precision": 0.0,
+        "hit_rate": 0.0,
+        "mrr": 0.0
+      },
+      "curriculum": {
+        "precision": 1.0,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      }
+    },
+    {
+      "id": "H6",
+      "concept_id": "M406",
+      "grade": 4,
+      "subject": "Math",
+      "generic": {
+        "precision": 0.0,
+        "hit_rate": 0.0,
+        "mrr": 0.0
+      },
+      "curriculum": {
+        "precision": 0.6666666666666666,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      }
+    },
+    {
+      "id": "H7",
+      "concept_id": "M408",
+      "grade": 4,
+      "subject": "Math",
+      "generic": {
+        "precision": 0.0,
+        "hit_rate": 0.0,
+        "mrr": 0.0
+      },
+      "curriculum": {
+        "precision": 0.3333333333333333,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      }
+    },
+    {
+      "id": "H8",
+      "concept_id": "M505",
+      "grade": 5,
+      "subject": "Math",
+      "generic": {
+        "precision": 1.0,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      },
+      "curriculum": {
+        "precision": 1.0,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      }
+    },
+    {
+      "id": "H9",
+      "concept_id": "M512",
+      "grade": 5,
+      "subject": "Math",
+      "generic": {
+        "precision": 0.3333333333333333,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      },
+      "curriculum": {
+        "precision": 1.0,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      }
+    },
+    {
+      "id": "H10",
+      "concept_id": "M514",
+      "grade": 5,
+      "subject": "Math",
+      "generic": {
+        "precision": 1.0,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      },
+      "curriculum": {
+        "precision": 1.0,
+        "hit_rate": 1.0,
+        "mrr": 1.0
+      }
+    }
+  ]
+}
