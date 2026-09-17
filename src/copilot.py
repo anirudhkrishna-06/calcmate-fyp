@@ -69,7 +69,7 @@ DEFAULT_MODEL = "llama3.2:1b"
 # "should have answered" vs "should have refused", run src/eval_threshold.py
 # to pick this value from data rather than from a guess. Do NOT cite 0.30 as
 # a final value in the report until it's been tuned.
-MIN_SCORE_THRESHOLD = 0.25
+MIN_SCORE_THRESHOLD = 0.45
 
 # Ollama generation parameters
 TEMPERATURE = 0.2          # low = grounded, less creative drift
