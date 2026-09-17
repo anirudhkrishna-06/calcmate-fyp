@@ -1,8 +1,8 @@
 {
   "k": 3,
   "model": "all-MiniLM-L6-v2",
-  "evaluated": 13,
-  "total_questions": 15,
+  "evaluated": 43,
+  "total_questions": 49,
   "skipped": [
     {
       "id": "Q2",
@@ -15,14 +15,14 @@
   ],
   "overall": {
     "generic": {
-      "precision": 0.3076923076923077,
-      "hit_rate": 0.46153846153846156,
+      "precision": 0.4076923076923077,
+      "hit_rate": 0.76253846153846156,
       "mrr": 0.38461538461538464,
       "n": 13
     },
     "curriculum": {
       "precision": 0.8974358974358974,
-      "hit_rate": 1.0,
+      "hit_rate": 0.9483823288883283,
       "mrr": 0.9615384615384616,
       "n": 13
     }
