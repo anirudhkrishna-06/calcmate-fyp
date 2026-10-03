@@ -23,7 +23,7 @@ SCOPE OF THIS PROTOTYPE (read this before citing any numbers from it):
 
 SETUP (one-time):
     1. Install Ollama:      https://ollama.com/download
-    2. Pull a small model:  ollama pull llama3.2:1b
+    2. Pull a small model:  ollama pull qwen2.5:3b
     3. Install Python pkg:  pip install ollama
 
 Usage:
@@ -58,7 +58,7 @@ log = logging.getLogger("copilot")
 # Configuration
 # --------------------------------------------------------------------------- #
 
-DEFAULT_MODEL = "llama3.2:1b"
+DEFAULT_MODEL = "qwen2.5:3b"
 
 # If the best retrieval score is below this, the Copilot refuses to call
 # the LLM at all and returns a "not in corpus" message. This is the primary
@@ -69,7 +69,7 @@ DEFAULT_MODEL = "llama3.2:1b"
 # "should have answered" vs "should have refused", run src/eval_threshold.py
 # to pick this value from data rather than from a guess. Do NOT cite 0.30 as
 # a final value in the report until it's been tuned.
-MIN_SCORE_THRESHOLD = 0.45
+MIN_SCORE_THRESHOLD = 0.30
 
 # Ollama generation parameters
 TEMPERATURE = 0.2          # low = grounded, less creative drift
@@ -79,17 +79,24 @@ MAX_TOKENS = 300           # plenty for a 2-4 sentence answer
 # lowest-scoring chunks first, then truncate the tail of remaining chunks.
 MAX_CONTEXT_CHARS = 6000
 
-PROMPT_TEMPLATE = """You are a teaching assistant helping a primary school teacher. \
-Answer the teacher's question using ONLY the textbook content provided below. \
-Do not use any outside knowledge. If the provided content does not contain \
-enough information to answer, say so explicitly rather than guessing.
+PROMPT_TEMPLATE = """You are a teaching assistant helping a primary school teacher in India.
 
-Textbook content:
+You have been given relevant passages from the NCERT Maths Mela textbook below. Use them as your PRIMARY source. You may also draw on your general knowledge of primary school mathematics teaching to make the explanation clear and complete.
+
+Guidelines:
+- Base the core of your answer on the textbook passages when they are relevant.
+- If the passages don't fully cover the question, you may supplement with standard pedagogical knowledge.
+- Keep the answer age-appropriate for a Grade {grade} student.
+- Be concise: 3-5 sentences.
+- Do not invent specific page numbers, chapter names, or quotes that aren't in the passages.
+- Plain language, no jargon.
+
+Textbook passages:
 {context}
 
 Teacher's question: {question}
 
-Answer (grounded strictly in the content above, 2-4 sentences, plain language suitable for explaining to a Grade {grade} student):"""
+Answer:"""
 
 
 # --------------------------------------------------------------------------- #
@@ -215,6 +222,45 @@ def _log_interaction(
         log.warning(f"[copilot] failed to write log: {e}")
 
 
+def question_is_answerable(question: str, chunks: list) -> tuple[bool, str]:
+    """
+    Cheap heuristic gate before invoking the LLM. Returns (ok, reason).
+
+    Checks that at least one retrieved chunk contains a high-signal
+    keyword from the question. This is deliberately conservative - it
+    would rather refuse a good question than answer a bad one.
+    """
+    if not chunks:
+        return False, "no chunks retrieved"
+
+    # Combine all retrieved text
+    combined = " ".join(c.text.lower() for c in chunks)
+    q_lower = question.lower()
+
+    # Stopwords to ignore
+    stop = {"what", "is", "are", "the", "a", "an", "of", "how", "do",
+            "we", "you", "i", "to", "for", "in", "on", "and", "or",
+            "between", "like", "with", "from", "when", "why", "which",
+            "can", "does", "different", "give", "me", "grade", "student",
+            "students", "teach", "explain", "example", "should", "know",
+            "before", "learning", "read", "write", "find", "using", "use"}
+
+    # Extract content words from the question (length > 3, not stopword)
+    import re
+    words = re.findall(r"[a-z]+", q_lower)
+    content_words = [w for w in words if len(w) > 3 and w not in stop]
+
+    if not content_words:
+        return True, "no content words"
+
+    # Check overlap: at least 2 content words must appear in the chunks
+    hits = sum(1 for w in content_words if w in combined)
+    if hits < 2:
+        return False, f"only {hits}/{len(content_words)} content words found in chunks"
+
+    return True, f"{hits}/{len(content_words)} content words matched"
+
+
 # --------------------------------------------------------------------------- #
 # Main pipeline
 # --------------------------------------------------------------------------- #
@@ -244,6 +290,8 @@ def answer_question(
     t0 = time.perf_counter()
     chunks = retriever.retrieve(question, grade=grade, subject=subject, k=k)
 
+
+
     # --- Refusal path 1: no retrieval results at all ---
     if not chunks:
         elapsed_ms = (time.perf_counter() - t0) * 1000
@@ -252,6 +300,8 @@ def answer_question(
                          answer=None, sources=[], elapsed_ms=elapsed_ms)
         return ("I couldn't find any curriculum content for this question "
                 "in the current corpus.", [])
+
+
 
     top_score = chunks[0].score
 

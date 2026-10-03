@@ -300,43 +300,96 @@ def handle_command(line: str, session: Session) -> bool:
 # --------------------------------------------------------------------------- #
 # Streaming generation
 # --------------------------------------------------------------------------- #
-
 def stream_answer(prompt: str, model: str) -> str:
     """
-    Stream tokens from Ollama to stdout as they arrive. Returns the full
-    concatenated text.
+    Stream tokens from Ollama to stdout as they arrive.
+
+    Strategy:
+      - Concatenate raw tokens verbatim (Ollama already includes natural
+        whitespace in its token stream).
+      - Maintain a buffer of unwrapped text.
+      - When the buffer exceeds the target line width, find the last space
+        and emit everything up to and including it as a completed line.
+      - At end-of-stream, flush any remaining buffer.
+
+    This preserves numeric expressions like '1 × 6 = 6' and '2 × 6 = 12'
+    exactly as the model produced them, and only inserts line breaks at
+    genuine word boundaries.
     """
     try:
         import ollama
     except ImportError:
         raise RuntimeError("Install the ollama Python package: pip install ollama")
 
-    pieces: list[str] = []
-    # Wrap to 68 columns with 2-space indent as we stream
-    current_line = "  "
+    WIDTH = 68
+    INDENT = "  "
+
+    full_text_parts: list[str] = []
+    buffer = ""              # unwrapped text waiting to be emitted
+    line_open = False        # whether we've written the first line's indent
+
+    def emit_line(text: str) -> None:
+        """Write a single wrapped line with the indent prefix."""
+        nonlocal line_open
+        stripped = text.rstrip()
+        if stripped:
+            sys.stdout.write(INDENT + stripped + "\n")
+        else:
+            sys.stdout.write("\n")
+        sys.stdout.flush()
+        line_open = False
+
+    def flush_ready_lines() -> None:
+        """
+        Emit any complete lines that fit within the width. Called on each
+        token. Never breaks a word in half.
+        """
+        nonlocal buffer
+        while True:
+            # Only split if the buffer is long enough to guarantee we can
+            # find a break point that keeps the first line ≤ WIDTH.
+            if len(buffer) <= WIDTH:
+                return
+            # Find the last space at or before WIDTH
+            split_at = buffer.rfind(" ", 0, WIDTH + 1)
+            if split_at <= 0:
+                # No natural break available; force a break at WIDTH
+                split_at = WIDTH
+            line, rest = buffer[:split_at], buffer[split_at + 1:]
+            emit_line(line)
+            buffer = rest
+
     try:
         for chunk in ollama.generate(
             model=model, prompt=prompt, stream=True,
-            options={"temperature": 0.2, "num_predict": 300},
+            options={"temperature": 0.2, "num_predict": 400},
         ):
             token = chunk.get("response", "")
             if not token:
                 continue
-            pieces.append(token)
-            # Simple word-wrap while streaming
-            for word in token.split(" "):
-                # Skip empty tokens that result from double spaces
-                if not word and current_line != "  ":
-                    continue
-                if len(current_line) + len(word) + 1 > 68:
-                    sys.stdout.write(current_line.rstrip() + "\n")
-                    current_line = "  " + word
-                else:
-                    current_line += ("" if current_line == "  " else " ") + word
-                sys.stdout.flush()
-        if current_line.strip():
-            sys.stdout.write(current_line.rstrip() + "\n")
-        sys.stdout.flush()
+            full_text_parts.append(token)
+
+            # Preserve explicit newlines emitted by the model
+            if "\n" in token:
+                before, _, after = token.partition("\n")
+                buffer += before
+                emit_line(buffer)
+                buffer = after
+                # Handle multi-newline tokens
+                while "\n" in after:
+                    before, _, after = after.partition("\n")
+                    buffer += before
+                    emit_line(buffer)
+                    buffer = after
+                continue
+
+            buffer += token
+            flush_ready_lines()
+
+        # Flush whatever remains
+        if buffer.strip():
+            emit_line(buffer)
+
     except Exception as e:
         msg = str(e).lower()
         if "connection" in msg or "refused" in msg or "not running" in msg:
@@ -345,8 +398,7 @@ def stream_answer(prompt: str, model: str) -> str:
             raise RuntimeError(f"Model '{model}' not pulled. Run: ollama pull {model}")
         raise
 
-    return "".join(pieces).strip()
-
+    return "".join(full_text_parts).strip()
 
 def warmup_spinner(label: str) -> tuple[threading.Thread, dict]:
     """Return (thread, done_flag) that runs a spinner in the background."""
@@ -501,7 +553,7 @@ def main() -> None:
         try:
             raw = input(f"{CYAN}❯{R} ").strip()
         except (EOFError, KeyboardInterrupt):
-            print(f"\n{GREY}bye{R}\n")
+            print(f"\n{GREY}Next Review la Paapom!{R}\n")
             return
 
         if not raw:
