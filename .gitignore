@@ -1,2 +1,8 @@
 venv/
 pdfs/
+data/auth.sqlite3*
+frontend/android/
+frontend/ios/
+data/presentation-api*.log
+frontend/.env
+frontend/.env.local

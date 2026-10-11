@@ -38,6 +38,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import time
 from pathlib import Path
 
@@ -58,7 +59,7 @@ log = logging.getLogger("copilot")
 # Configuration
 # --------------------------------------------------------------------------- #
 
-DEFAULT_MODEL = "qwen2.5:3b"
+DEFAULT_MODEL = "llama3.2:3b"
 
 # If the best retrieval score is below this, the Copilot refuses to call
 # the LLM at all and returns a "not in corpus" message. This is the primary
@@ -157,11 +158,12 @@ def call_llm(
         )
 
     options = {"temperature": TEMPERATURE, "num_predict": MAX_TOKENS}
+    client = ollama.Client(timeout=float(os.getenv("CALCMATE_GENERATION_TIMEOUT", "65")))
 
     try:
         if stream:
             pieces: list[str] = []
-            for chunk in ollama.generate(
+            for chunk in client.generate(
                 model=model, prompt=prompt, stream=True, options=options
             ):
                 token = chunk.get("response", "")
@@ -170,7 +172,7 @@ def call_llm(
             print()  # newline after stream
             return "".join(pieces).strip()
 
-        resp = ollama.generate(model=model, prompt=prompt, options=options)
+        resp = client.generate(model=model, prompt=prompt, options=options)
         return resp["response"].strip()
 
     except Exception as e:
@@ -184,7 +186,7 @@ def call_llm(
             raise RuntimeError(
                 f"Model '{model}' not pulled. Run: ollama pull {model}"
             ) from e
-        raise
+        raise RuntimeError("Local model generation failed. Check Ollama and retry.") from e
 
 
 # --------------------------------------------------------------------------- #

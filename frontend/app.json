@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "Calcmate",
+    "slug": "calcmate",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "calcmate",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "org.calcmate.teacher",
+      "softwareKeyboardLayoutMode": "resize",
+      "adaptiveIcon": {
+        "backgroundColor": "#F7F1E6"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "expo-secure-store",
+      "expo-font",
+      "./plugins/withBuildMemory",
+      "./plugins/withLocalApi"
+    ]
+  }
+}

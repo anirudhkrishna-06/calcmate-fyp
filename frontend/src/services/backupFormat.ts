@@ -1,0 +1,36 @@
+const credentialKeys = new Set(["password", "passwordhash", "rawpassword", "hashedpassword", "token", "accesstoken", "refreshtoken", "idtoken", "secret", "clientsecret", "secretkey", "privatekey", "apikey", "authorization", "credentials", "session"]);
+function withoutCredentials(value:unknown):unknown {
+  if (Array.isArray(value)) return value.map(withoutCredentials);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => !credentialKeys.has(key.toLowerCase().replace(/[_-]/g,"")))
+    .map(([key,item]) => [key,withoutCredentials(item)]));
+  return value;
+}
+export function serializeBackup(snapshot:Record<string,unknown>):string {
+  const records = (key:string) => {
+    const data=snapshot[key];
+    if (!Array.isArray(data)) throw new Error(`Backup is missing ${key} records.`);
+    return data;
+  };
+  const decode = (key:string) => records(key).map(row => ({...row,data:JSON.parse(row.data)}));
+  const backup = withoutCredentials({
+    format:"calcmate-workspace",version:2,exportedAt:snapshot.createdAt,
+    workspace:{ id:snapshot.workspaceId,mode:snapshot.mode },
+    teacherProfiles:decode("profiles"),students:records("students"),attendance:records("attendance"),
+    assessments:records("assessments"),mathsConcepts:records("concepts"),competencies:records("competencies"),
+    observations:records("observations"),schedules:decode("schedules"),chatHistory:records("messages"),
+    conversations:records("conversations"),chatMessageDetails:records("message_details")
+  });
+  const json=JSON.stringify(backup,null,2);
+  validateBackupJson(json);
+  return json;
+}
+export function validateBackupJson(json:string) {
+  const data=JSON.parse(json);
+  if (data.format !== "calcmate-workspace" || ![1,2].includes(data.version) || !data.workspace?.id) throw new Error("Invalid Calcmate backup header.");
+  for (const key of ["teacherProfiles","students","attendance","assessments","mathsConcepts","competencies","observations","schedules","chatHistory"]) {
+    if (!Array.isArray(data[key])) throw new Error(`Invalid backup ${key}.`);
+  }
+  if (data.version===2 && (!Array.isArray(data.conversations) || !Array.isArray(data.chatMessageDetails))) throw new Error("Invalid backup conversations.");
+  return data;
+}

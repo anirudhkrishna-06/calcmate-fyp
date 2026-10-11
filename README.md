@@ -1,5 +1,7 @@
 # Calcmate — KG + RAG Starter (Week 1)
 
+For the current teacher app, teammate setup and professor walkthrough, start with [Team handover](docs/team-handover.md). On Windows, after first-time dependency setup, run `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-presentation.ps1`.
+
 ## What's here
 
 ```
