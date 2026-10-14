@@ -4,10 +4,13 @@ from fastapi.responses import JSONResponse
 from src.rag_api import app
 from src.auth_api import router
 from src.admin_api import router as admin_router, admin_lifespan
+from src.learner_api import router as learner_router
 
 app.include_router(router)
 app.include_router(admin_router)
+app.include_router(learner_router)
 app.router.lifespan_context = admin_lifespan
+
 
 
 @app.exception_handler(RequestValidationError)

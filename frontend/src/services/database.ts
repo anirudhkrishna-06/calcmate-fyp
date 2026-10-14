@@ -84,7 +84,30 @@ export const migrations = [
      PRIMARY KEY(workspace_id,concept_id,prerequisite_id),
      FOREIGN KEY(workspace_id,concept_id) REFERENCES concepts(workspace_id,id) ON DELETE CASCADE,
      FOREIGN KEY(workspace_id,prerequisite_id) REFERENCES concepts(workspace_id,id) ON DELETE CASCADE);
-   CREATE INDEX IF NOT EXISTS concept_prereqs_idx ON concept_prerequisites(workspace_id,concept_id);`
+   CREATE INDEX IF NOT EXISTS concept_prereqs_idx ON concept_prerequisites(workspace_id,concept_id);`,
+  `CREATE TABLE IF NOT EXISTS learner_concept_states (
+     id TEXT NOT NULL,
+     workspace_id TEXT NOT NULL,
+     student_id TEXT NOT NULL,
+     concept_id TEXT NOT NULL,
+     mastery_estimate REAL,
+     evidence_count INTEGER NOT NULL DEFAULT 0,
+     last_evidence_at TEXT,
+     estimator_name TEXT NOT NULL DEFAULT 'score-ratio-v1',
+     estimator_version TEXT NOT NULL DEFAULT '1',
+     state_status TEXT NOT NULL DEFAULT 'unknown'
+       CHECK(state_status IN ('unknown','insufficient','needs_support','likely_ready')),
+     evidence_sufficiency TEXT NOT NULL DEFAULT 'none'
+       CHECK(evidence_sufficiency IN ('none','limited','moderate','sufficient')),
+     updated_at TEXT NOT NULL,
+     created_at TEXT NOT NULL,
+     PRIMARY KEY(workspace_id,id),
+     UNIQUE(workspace_id,student_id,concept_id),
+     FOREIGN KEY(workspace_id,student_id) REFERENCES students(workspace_id,id) ON DELETE CASCADE,
+     FOREIGN KEY(workspace_id,concept_id) REFERENCES concepts(workspace_id,id) ON DELETE CASCADE);
+   CREATE INDEX IF NOT EXISTS lcs_student ON learner_concept_states(workspace_id,student_id);
+   CREATE INDEX IF NOT EXISTS lcs_concept ON learner_concept_states(workspace_id,concept_id);
+   CREATE INDEX IF NOT EXISTS lcs_status  ON learner_concept_states(workspace_id,state_status);`
 ];
 
 let opening: Promise<SQLite.SQLiteDatabase> | undefined;
@@ -138,6 +161,22 @@ export type ConceptRecord = BaseRecord & {
 export type AttendanceRecord = BaseRecord & { student_id: string; date: string; status: "present" | "absent" | "late" };
 export type AssessmentRecord = BaseRecord & { student_id: string; concept_id: string; date: string; score: number; maximum: number };
 export type CompetencyRecord = BaseRecord & { student_id: string; concept_id: string; mastery: number };
+export type LearnerConceptStateRecord = {
+  id: string;
+  workspace_id: string;
+  student_id: string;
+  concept_id: string;
+  mastery_estimate: number | null;
+  evidence_count: number;
+  last_evidence_at: string | null;
+  estimator_name: string;
+  estimator_version: string;
+  state_status: "unknown" | "insufficient" | "needs_support" | "likely_ready";
+  evidence_sufficiency: "none" | "limited" | "moderate" | "sufficient";
+  updated_at: string;
+  created_at: string;
+};
+
 export type ObservationRecord = BaseRecord & { student_id: string; note: string };
 export type JsonRecord = BaseRecord & { data: string };
 export type MessageRecord = BaseRecord & { role: "teacher" | "assistant"; text: string };

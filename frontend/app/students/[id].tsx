@@ -14,6 +14,8 @@ import { StudentEditor } from "@/components/StudentEditor";
 import { loadStudents, localRepository, saveAttendance, saveAssessment, removeAssessment, saveCompetency, saveObservation } from "@/services/storageService";
 import { today, AttendanceRecord, AssessmentRecord } from "@/services/database";
 import { useLocalData } from "@/hooks/useLocalData";
+import { getStudentKnowledgeView, stateLabel, sufficiencyLabel, StudentKnowledgeView } from "@/services/learnerStateService";
+
 
 export default function StudentDetailsScreen() {
   const { id,tab:initialTab } = useLocalSearchParams<{ id:string;tab?:string }>();
@@ -24,8 +26,17 @@ export default function StudentDetailsScreen() {
     const assessments = (await (await localRepository("assessments")).list()).filter(a => a.student_id === id).sort((a,b) => b.date.localeCompare(a.date) || b.created_at.localeCompare(a.created_at));
     const competencies = (await (await localRepository("competencies")).list()).filter(c => c.student_id === id);
     const observations = (await (await localRepository("observations")).list()).filter(o => o.student_id === id);
-    return { student,concepts,attendance,assessments,competencies,observations };
+    let knowledgeView: StudentKnowledgeView | null = null;
+    if (student) {
+      try {
+        knowledgeView = await getStudentKnowledgeView(id);
+      } catch (err) {
+        console.warn("Could not load knowledge view", err);
+      }
+    }
+    return { student,concepts,attendance,assessments,competencies,observations,knowledgeView };
   },[id]);
+
   const { data,error,loading,reload } = useLocalData(loader);
   const [tab,setTab] = useState(["overview","attendance","assessments","observations"].includes(initialTab??"")?initialTab!:"overview"); const [date,setDate] = useState(today());
   const [status,setStatus] = useState<AttendanceRecord["status"]>("present");
@@ -64,6 +75,42 @@ export default function StudentDetailsScreen() {
       {tab === "overview" ? <>
         <Section title="Learning progress"><AppText>{student.hasEvidence ? (student.needsRevision||student.mastery<0.6) ? "Needs revision: revisit the recorded weak concepts with concrete examples." : student.mastery>=0.8 ? "Secure in recorded concepts. Continue with independent practice." : "Practicing: give guided examples and check reasoning." : "Not assessed yet. Record a short Maths assessment before judging progress."}</AppText></Section>
         <AppText muted>{data?.assessments.length} assessments recorded | Last present: {student.lastSeenLabel}</AppText>
+
+        {data?.knowledgeView ? <Section title="Curriculum Knowledge State">
+          <AppText muted>
+            {`Assessed: ${data.knowledgeView.assessed_count} · Likely ready: ${data.knowledgeView.likely_ready_count} · Needs revision: ${data.knowledgeView.needs_support_count} · Not assessed: ${data.knowledgeView.unassessed_count}`}
+          </AppText>
+          <View style={{ gap: 10, marginTop: 6 }}>
+            {data.knowledgeView.concepts.map(c => {
+              const st = c.state;
+              const hasState = st && st.state_status !== "unknown" && st.mastery_estimate !== null;
+              return (
+                <View key={c.concept_id} style={{ padding: 10, borderRadius: 8, borderWidth: 1, borderColor: c.prerequisite_gap ? "#f59e0b" : "#e2e8f0", backgroundColor: "#fff", gap: 4 }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                    <AppText style={{ fontWeight: "600", flex: 1 }}>{c.concept_id}: {c.concept_title}</AppText>
+                    <AppText style={{
+                      fontWeight: "700",
+                      color: !hasState ? "#64748b" : st.state_status === "likely_ready" ? "#16a34a" : st.state_status === "needs_support" ? "#dc2626" : "#d97706"
+                    }}>
+                      {hasState ? `${Math.round(st.mastery_estimate! * 100)}%` : "Unknown"}
+                    </AppText>
+                  </View>
+                  <AppText variant="small" muted>
+                    {hasState
+                      ? `${stateLabel(st.state_status)} · ${sufficiencyLabel(st.evidence_sufficiency)} (${st.evidence_count} mark${st.evidence_count === 1 ? "" : "s"})`
+                      : "No assessment recorded (State unknown · Not zero mastery)"}
+                  </AppText>
+                  {c.prerequisite_gap ? (
+                    <AppText variant="small" style={{ color: "#d97706", fontWeight: "600" }}>
+                      ⚠️ Prerequisite Gap: Foundational concepts need revision before advancing.
+                    </AppText>
+                  ) : null}
+                </View>
+              );
+            })}
+          </View>
+        </Section> : null}
+
         <AppText variant="subheading">What to revisit</AppText>
         {weak.length ? weak.map(c => <View key={c.id} style={{gap:4}}><AppText>{title(c.concept_id)}: {Math.round(c.mastery*100)}% recorded evidence</AppText><AppText variant="small" muted>Model a concrete example, ask the student to explain it, then record a short check.</AppText><Button label="Teaching ideas" variant="quiet" onPress={()=>router.push({pathname:"/chatbot",params:{grade:String(student.grade),prompt:`Suggest a concrete teaching activity and three practice questions for ${title(c.concept_id)} in Grade ${student.grade} Maths.`}})}/></View>) : <AppText muted>No recorded weak concepts.</AppText>}
         <AppText variant="subheading">Assessment progress</AppText>
@@ -73,6 +120,7 @@ export default function StudentDetailsScreen() {
           return <AppText key={c.id}>{c.title}: {Math.round(first.score/first.maximum*100)}% to {Math.round(last.score/last.maximum*100)}%</AppText>;
         })}
       </> : null}
+
       {tab === "edit" ? <>
         <Button label="Back to overview" icon="arrow-back-outline" variant="quiet" onPress={()=>setTab("overview")} />
         <StudentEditor key={student.id} student={student} onSaved={() => { void reload(); setTab("overview"); }} />

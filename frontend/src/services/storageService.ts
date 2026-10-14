@@ -2,6 +2,8 @@ import { Teacher, Grade, Student, ScheduleItem } from "@/types/domain";
 import { requireSession } from "./authService";
 import type { SQLiteDatabase } from "expo-sqlite";
 import { assertScope, getDatabase, repository, today, newId, withTransaction, AttendanceRecord, AssessmentRecord } from "./database";
+import { updateLearnerConceptState } from "./learnerStateService";
+
 
 export async function initializeStorage() { await getDatabase(); }
 export async function storageSummary(){
@@ -63,16 +65,22 @@ export async function saveAssessment(input: Omit<AssessmentRecord, "id" | "works
   if (!Number.isFinite(input.score) || !Number.isFinite(input.maximum) || input.maximum <= 0 || input.score < 0 || input.score > input.maximum) throw new Error("Score must be between zero and the maximum.");
   const session = await requireSession(); const db = await getDatabase(); await assertScope(db,session);
   const key = id ?? newId(); const now = new Date().toISOString();
+  let oldConceptId: string | undefined;
   await withTransaction(async tx => {
     const old = await tx.getFirstAsync<AssessmentRecord>("SELECT * FROM assessments WHERE workspace_id=? AND id=?",session.workspaceId,key);
     if (old && old.student_id !== input.student_id) throw new Error("An assessment belongs to its original student.");
+    oldConceptId = old?.concept_id !== input.concept_id ? old?.concept_id : undefined;
     await tx.runAsync(`INSERT INTO assessments VALUES(?,?,?,?,?,?,?,?,?)
       ON CONFLICT(workspace_id,id) DO UPDATE SET score=excluded.score,maximum=excluded.maximum,date=excluded.date,concept_id=excluded.concept_id,updated_at=excluded.updated_at`,
       key,session.workspaceId,input.student_id,input.concept_id,input.date,input.score,input.maximum,now,now);
-    if (old && old.concept_id !== input.concept_id) await refreshCompetency(tx,session.workspaceId,input.student_id,old.concept_id);
+    if (oldConceptId) await refreshCompetency(tx,session.workspaceId,input.student_id,oldConceptId);
     await refreshCompetency(tx,session.workspaceId,input.student_id,input.concept_id);
   });
+  // Update learner concept states outside the write-serialized transaction
+  if (oldConceptId) await updateLearnerConceptState(input.student_id, oldConceptId);
+  await updateLearnerConceptState(input.student_id, input.concept_id);
 }
+
 export async function saveClassAssessments(input:{grade:number;conceptId:string;date:string;maximum:number;entries:{studentId:string;score:number}[]}) {
   validateDate(input.date);
   if(![1,2,3,4].includes(input.grade) || !input.entries.length)throw new Error("Select a class and enter at least one mark.");
@@ -89,8 +97,13 @@ export async function saveClassAssessments(input:{grade:number;conceptId:string;
       await refreshCompetency(tx,w,entry.studentId,input.conceptId);
     }
   });
+  // Update learner states outside the serialized transaction
+  for (const entry of input.entries) {
+    await updateLearnerConceptState(entry.studentId, input.conceptId);
+  }
   return input.entries.length;
 }
+
 async function refreshCompetency(tx: SQLiteDatabase, workspaceId: string, studentId: string, conceptId: string) {
   const latest = await tx.getFirstAsync<AssessmentRecord>("SELECT * FROM assessments WHERE workspace_id=? AND student_id=? AND concept_id=? ORDER BY date DESC,created_at DESC,id DESC LIMIT 1",workspaceId,studentId,conceptId);
   if (!latest) {
@@ -104,13 +117,17 @@ async function refreshCompetency(tx: SQLiteDatabase, workspaceId: string, studen
 }
 export async function removeAssessment(id: string) {
   const session = await requireSession(); const db = await getDatabase(); await assertScope(db,session);
+  let removed: AssessmentRecord | undefined;
   await withTransaction(async tx => {
     const old = await tx.getFirstAsync<AssessmentRecord>("SELECT * FROM assessments WHERE workspace_id=? AND id=?",session.workspaceId,id);
     if (!old) return;
+    removed = old;
     await tx.runAsync("DELETE FROM assessments WHERE workspace_id=? AND id=?",session.workspaceId,id);
     await refreshCompetency(tx,session.workspaceId,old.student_id,old.concept_id);
   });
+  if (removed) await updateLearnerConceptState(removed.student_id, removed.concept_id);
 }
+
 export async function saveCompetency(studentId: string, conceptId: string, percentage: number) {
   if (!Number.isFinite(percentage) || percentage < 0 || percentage > 100) throw new Error("Competency must be between 0 and 100.");
   const repo = await localRepository("competencies");

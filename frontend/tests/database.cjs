@@ -82,8 +82,9 @@ async function run() {
   await assert.rejects(() => storage.loadStudents(), /session/);
   await auth.exploreDemo();
   const database = await db.getDatabase();
-  assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version,3);
+  assert.equal((await database.getFirstAsync('PRAGMA user_version')).user_version, db.migrations.length);
   assert.equal((await database.getFirstAsync("SELECT title FROM conversations WHERE workspace_id='upgrade-workspace'")).title,'Earlier chat');
+
   assert.equal((await database.getFirstAsync("SELECT text FROM messages WHERE id='old-message'")).text,'Old question');
   assert.equal((await storage.loadStudents()).length,32);
   const snapshot=await storage.dashboard();
