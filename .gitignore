@@ -6,3 +6,4 @@ frontend/ios/
 data/presentation-api*.log
 frontend/.env
 frontend/.env.local
+pdfs.zip

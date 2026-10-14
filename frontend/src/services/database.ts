@@ -70,7 +70,21 @@ export const migrations = [
    INSERT INTO conversations SELECT 'legacy-'||workspace_id,workspace_id,'Earlier chat',4,MIN(created_at),MAX(updated_at)
      FROM messages GROUP BY workspace_id;
    INSERT INTO message_details(message_id,workspace_id,conversation_id,status)
-     SELECT id,workspace_id,'legacy-'||workspace_id,'completed' FROM messages;`
+     SELECT id,workspace_id,'legacy-'||workspace_id,'completed' FROM messages;`,
+  `ALTER TABLE concepts ADD COLUMN learning_objective TEXT;
+   ALTER TABLE concepts ADD COLUMN coverage_status TEXT NOT NULL DEFAULT 'pending';
+   ALTER TABLE concepts ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1;
+   ALTER TABLE concepts ADD COLUMN subject_area TEXT NOT NULL DEFAULT 'Math';
+   CREATE TABLE IF NOT EXISTS concept_prerequisites (
+     workspace_id TEXT NOT NULL,
+     concept_id TEXT NOT NULL,
+     prerequisite_id TEXT NOT NULL,
+     relationship_type TEXT NOT NULL DEFAULT 'PREREQUISITE_OF',
+     confidence TEXT NOT NULL DEFAULT 'provisional',
+     PRIMARY KEY(workspace_id,concept_id,prerequisite_id),
+     FOREIGN KEY(workspace_id,concept_id) REFERENCES concepts(workspace_id,id) ON DELETE CASCADE,
+     FOREIGN KEY(workspace_id,prerequisite_id) REFERENCES concepts(workspace_id,id) ON DELETE CASCADE);
+   CREATE INDEX IF NOT EXISTS concept_prereqs_idx ON concept_prerequisites(workspace_id,concept_id);`
 ];
 
 let opening: Promise<SQLite.SQLiteDatabase> | undefined;
@@ -112,7 +126,15 @@ export async function withTransaction<T>(task: (tx: SQLite.SQLiteDatabase) => Pr
 
 export type BaseRecord = { id: string; workspace_id: string; created_at: string; updated_at: string };
 export type StudentRecord = BaseRecord & { name: string; grade: number; roll: string };
-export type ConceptRecord = BaseRecord & { title: string; grade: number; prerequisite_id: string | null };
+export type ConceptRecord = BaseRecord & {
+  title: string;
+  grade: number;
+  prerequisite_id: string | null;
+  learning_objective?: string | null;
+  coverage_status?: string | null;
+  is_active?: number | null;
+  subject_area?: string | null;
+};
 export type AttendanceRecord = BaseRecord & { student_id: string; date: string; status: "present" | "absent" | "late" };
 export type AssessmentRecord = BaseRecord & { student_id: string; concept_id: string; date: string; score: number; maximum: number };
 export type CompetencyRecord = BaseRecord & { student_id: string; concept_id: string; mastery: number };
