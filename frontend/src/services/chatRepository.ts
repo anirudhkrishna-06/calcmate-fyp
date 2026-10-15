@@ -49,7 +49,8 @@ export async function prepareMessage(conversationId:string, question:string, gra
   if (!text || text.length>2000) throw new Error("Enter a question of 1 to 2000 characters.");
   if (![1,2,3,4].includes(grade)) throw new Error("Choose a grade from 1 to 4.");
   const scope=await chatScope(); const id=newId(); const now=new Date().toISOString();
-  const request:ChatRequest={question:text,grade:grade as ChatRequest["grade"],subject:"Math",use_llm:true};
+  // Stage 3: include workspace_id so the backend copilot pipeline can query learner data.
+  const request:ChatRequest={question:text,grade:grade as ChatRequest["grade"],subject:"Math",use_llm:true,workspace_id:scope.workspaceId};
   await withTransaction(async tx => {
     const conversation=await tx.getFirstAsync<Conversation>("SELECT * FROM conversations WHERE workspace_id=? AND id=?",scope.workspaceId,conversationId);
     if (!conversation) throw new Error("Conversation not found.");
@@ -70,12 +71,13 @@ export async function prepareRetry(id:string):Promise<ChatMessage> {
     return {...message,status:"pending",error:null};
   });
 }
-export async function completeMessage(message:ChatMessage,response:RagResponse) {
+export async function completeMessage(message:ChatMessage,response:RagResponse,metadata?:Record<string,unknown>) {
   const now=new Date().toISOString();
   await withTransaction(async tx => {
     const id=`assistant-${message.id}`;
+    const metaJson=metadata ? JSON.stringify(metadata) : null;
     await tx.runAsync("INSERT INTO messages VALUES(?,?,?,?,?,?) ON CONFLICT(workspace_id,id) DO NOTHING",id,message.workspace_id,"assistant",response.answer,now,now);
-    await tx.runAsync("INSERT INTO message_details VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(workspace_id,message_id) DO NOTHING",id,message.workspace_id,message.conversation_id,"completed",null,JSON.stringify(response.chunks),null,message.id);
+    await tx.runAsync("INSERT INTO message_details VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(workspace_id,message_id) DO NOTHING",id,message.workspace_id,message.conversation_id,"completed",metaJson,JSON.stringify(response.chunks),null,message.id);
     await tx.runAsync("UPDATE message_details SET status='completed',error=NULL WHERE workspace_id=? AND message_id=?",message.workspace_id,message.id);
     await tx.runAsync("UPDATE conversations SET updated_at=? WHERE workspace_id=? AND id=?",now,message.workspace_id,message.conversation_id);
   });

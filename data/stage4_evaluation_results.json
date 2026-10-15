@@ -1,0 +1,34 @@
+{
+  "Round-Robin": {
+    "learning_gap_coverage": 0.1869,
+    "prerequisite_violations": 114.1,
+    "average_instructional_delay": 10.78,
+    "time_to_mastery": 11.2,
+    "switching_cost": 11.0,
+    "unaddressed_prerequisite_deficit": 248.23
+  },
+  "Static Timetable": {
+    "learning_gap_coverage": 0.1799,
+    "prerequisite_violations": 68.98,
+    "average_instructional_delay": 10.81,
+    "time_to_mastery": 8.58,
+    "switching_cost": 2.0,
+    "unaddressed_prerequisite_deficit": 234.3
+  },
+  "Needs-Only (Ablated)": {
+    "learning_gap_coverage": 0.1744,
+    "prerequisite_violations": 232.3,
+    "average_instructional_delay": 10.95,
+    "time_to_mastery": 9.85,
+    "switching_cost": 4.64,
+    "unaddressed_prerequisite_deficit": 257.34
+  },
+  "CALCMATE": {
+    "learning_gap_coverage": 0.0786,
+    "prerequisite_violations": 0.02,
+    "average_instructional_delay": 11.4,
+    "time_to_mastery": 7.67,
+    "switching_cost": 8.68,
+    "unaddressed_prerequisite_deficit": 235.56
+  }
+}

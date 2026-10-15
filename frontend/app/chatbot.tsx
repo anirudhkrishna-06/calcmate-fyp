@@ -7,12 +7,15 @@ import NetInfo from "@react-native-community/netinfo";
 import { AppText } from "@/components/AppText";
 import { Button } from '@/components/Button';
 import { AssistantMessage } from "@/components/AssistantMessage";
+import { ScheduleCard } from "@/components/ScheduleCard";
 import { colors } from "@/theme";
 import { Conversation, ChatMessage, RagChunk } from "@/types/chat";
+import type { GeneralSchedule } from "@/types/generalSchedule";
 import { listConversations,createConversation,selectConversation,restoreConversation,conversationMessages,sendMessage,retryMessage } from "@/services/chatService";
 import { apiBaseUrl } from "@/services/ragClient";
 import { useGrade } from "@/hooks/useGrade";
 import { chatErrorSummary } from "@/services/chatPresentation";
+
 
 const gradePrompts={
   1:["Explain counting using classroom objects","Generate five addition questions within 20","Suggest an activity for comparing numbers"],
@@ -124,8 +127,19 @@ export default function ChatbotScreen({embedded=false}:{embedded?:boolean}={}) {
       <Pressable accessibilityRole="button" onPress={()=>setLegacyOpen(old=>({...old,[item.id]:!old[item.id]}))}><AppText variant="small" muted>Earlier service notice (not an AI answer) {legacyOpen[item.id] ? "-" : "+"}</AppText></Pressable>
       {legacyOpen[item.id] ? <Text selectable style={styles.sourceText}>{item.text}</Text> : null}
     </View>;
+    let scheduleDraft: GeneralSchedule | null = null;
+    if (item.request_json) {
+      try {
+        const meta = JSON.parse(item.request_json);
+        if (meta?.schedule && meta.schedule.kind === "general-schedule") {
+          scheduleDraft = meta.schedule as GeneralSchedule;
+        }
+      } catch { /* Ignore non-schedule metadata */ }
+    }
     return <View style={styles.assistantRow}><AppText variant="small" muted style={{marginBottom:8}}>Calcmate</AppText>
-      <AssistantMessage text={item.text} onResize={scrollToEnd} /><Sources json={item.sources_json} />
+      <AssistantMessage text={item.text} onResize={scrollToEnd} />
+      {scheduleDraft ? <ScheduleCard draft={scheduleDraft} savedId={scheduleDraft.id} /> : null}
+      <Sources json={item.sources_json} />
     </View>;
   }
   const pending=messages.some(m => m.status==="pending");

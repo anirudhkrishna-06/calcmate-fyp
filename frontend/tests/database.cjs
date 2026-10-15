@@ -249,7 +249,7 @@ async function run() {
   let rows=await chat.conversationMessages(c1.id); assert.equal(rows.length,1);assert.equal(rows[0].status,'pending');
   await assert.rejects(() => chat.sendMessage(c1.id,'Duplicate request',4),/pending/);
   release(); await pendingSend;
-  assert.deepEqual(Object.keys(posted).sort(),['grade','question','subject','use_llm']);
+  assert.deepEqual(Object.keys(posted).sort(),['grade','question','subject','use_llm','workspace_id']);
   rows=await chat.conversationMessages(c1.id);assert.equal(rows.length,2);assert.equal(rows[0].status,'completed');assert.deepEqual(JSON.parse(rows[1].sources_json),[source]);
   global.fetch=async () => {throw new TypeError('Network failed');};
   await chat.sendMessage(c1.id,'Teach division',3);rows=await chat.conversationMessages(c1.id);
