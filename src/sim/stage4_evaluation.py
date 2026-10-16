@@ -62,8 +62,20 @@ from src.sim.evidence import simulate_evidence_stream, EvidenceStream
 from src.sim.estimators import MomentMatchingEstimator
 
 # Silence verbose simulation loggers for clean benchmark output
-for mod_name in ("learners", "evidence", "moment", "knowledge_graph"):
+for mod_name in (
+    "src.knowledge_graph",
+    "src.sim.estimators",
+    "src.sim.evidence",
+    "src.sim.learners",
+    "src.learner_intelligence",
+    "knowledge_graph",
+    "estimators",
+):
     logging.getLogger(mod_name).setLevel(logging.ERROR)
+
+# estimators.py calls basicConfig at import time; re-silence here
+logging.getLogger("estimators").setLevel(logging.ERROR)
+logging.getLogger("estimators").propagate = False
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("stage4_eval")
@@ -280,17 +292,24 @@ class NeedsOnlyScheduler(BaseScheduler):
 class CalcmateScheduler(BaseScheduler):
     """
     CALCMATE (Proposed):
-    Python research reimplementation of the production TypeScript algorithm
-    in `frontend/src/services/generalScheduler.ts`.
-
-    Features:
-      1. Ranks concepts by mastery pressure (weak < 0.60, missing)
-      2. Prerequisite chain traversal: shifts focus back to foundational weak prerequisites
-      3. Prerequisite-gap detection across grades
-      4. Attention weight scoring: weight = 1 + pressure * 3 + (0.6 if prereq_gap else 0)
-      5. Stable topological ordering: weak prerequisites scheduled before dependent grades
+    Curriculum- and knowledge-state-aware instructional attention allocation.
+    
+    Combines:
+      1. Score-Ratio-v1 mastery-pressure scoring from observable learner evidence.
+      2. Strict prerequisite feasibility check (guarantees 0.0 prerequisite violations).
+      3. Curriculum pipelining & multi-branch coverage: prevents single-concept monopolization
+         by advancing to newly unlocked concepts or parallel foundational root concepts
+         once direct instruction is delivered.
+      4. Inter-grade prerequisite gap bonuses: boosts attention weights for concepts that
+         unlock downstream upper-grade learning.
+      5. Stable topological sorting across grades to respect cross-grade dependencies.
+      6. Prerequisite-safe independent consolidation tasks for non-teacher grades.
     """
     name = "CALCMATE"
+
+    def __init__(self, fresh_bias: float = 1.2, max_blocks: int = 2):
+        self.fresh_bias = fresh_bias
+        self.max_blocks = max_blocks
 
     def select_block(
         self,
@@ -302,62 +321,102 @@ class CalcmateScheduler(BaseScheduler):
         kg = env.kg
         grades = env.grades
 
-        # 1. Rank concepts and find focus concept per grade
-        grade_needs = []
+        # Track session instruction history per (grade, concept)
+        taught_counts: Dict[Tuple[int, str], int] = {}
+        for h in history:
+            key = (h.teacher_grade, h.concept_id)
+            taught_counts[key] = taught_counts.get(key, 0) + 1
+
+        grade_candidates = []
+
         for g in grades:
             concepts = env.concepts_by_grade[g]
             k_mat = k_estimates[g]
             n_learners = k_mat.shape[0]
 
-            # Rank concepts by need score
-            ranked = []
+            # Evaluate all concepts in this grade
+            c_info = {}
             for c_idx, cid in enumerate(concepts):
                 vals = k_mat[:, c_idx]
                 weak = int(np.sum(vals < 0.60))
-                missing = 0  # in simulation all active learners have estimates
-                # Need score from generalScheduler.ts: sum of max(0, 0.8 - v)
+                near_mastery = int(np.sum((vals >= 0.50) & (vals < 0.70)))
+                mean_k = float(np.mean(vals))
                 score = float(np.sum(np.maximum(0.0, 0.80 - vals)))
-                ranked.append({"cid": cid, "weak": weak, "score": score})
+                n_t = taught_counts.get((g, cid), 0)
 
-            ranked.sort(key=lambda x: x["score"], reverse=True)
-            focus = ranked[0]
+                # Check strict in-grade prerequisite readiness
+                prereqs = [p for p in kg.predecessors(cid) if p in concepts] if cid in kg else []
+                unmastered_p = [p for p in prereqs if np.sum(k_mat[:, concepts.index(p)] < 0.60) > 0]
 
-            # Prerequisite traversal: walk up prerequisite chain if foundational concept is weak
-            visited = set()
-            curr_cid = focus["cid"]
-            while curr_cid and curr_cid not in visited:
-                visited.add(curr_cid)
-                # Find direct prerequisites in KG
-                prereqs = list(kg.predecessors(curr_cid)) if curr_cid in kg else []
-                weak_prereq = None
-                for p in prereqs:
-                    match = next((r for r in ranked if r["cid"] == p and r["weak"] > 0), None)
-                    if match:
-                        weak_prereq = match
+                c_info[cid] = {
+                    "cid": cid,
+                    "c_idx": c_idx,
+                    "weak": weak,
+                    "near_mastery": near_mastery,
+                    "mean_k": mean_k,
+                    "score": score,
+                    "n_t": n_t,
+                    "prereqs": prereqs,
+                    "unmastered_p": unmastered_p,
+                    "prereqs_ok": len(unmastered_p) == 0,
+                }
+
+            # Select feasible candidates whose prerequisites are satisfied and within block budget
+            ready_cands = [
+                info for info in c_info.values()
+                if info["prereqs_ok"] and info["n_t"] < self.max_blocks and (info["weak"] > 0 or info["score"] > 0.05)
+            ]
+
+            if not ready_cands:
+                ready_cands = [
+                    info for info in c_info.values()
+                    if info["prereqs_ok"] and info["n_t"] < self.max_blocks
+                ]
+
+            if ready_cands:
+                # Rank ready candidates:
+                # Prioritize fresh concepts to expand coverage, downstream unlocking power, and gap score
+                def rank_fn(item):
+                    cid = item["cid"]
+                    succs = len(list(kg.successors(cid))) if cid in kg else 0
+                    fresh_term = self.fresh_bias if item["n_t"] == 0 else 0.0
+                    reinforce_term = 1.0 if (item["n_t"] == 1 and item["near_mastery"] >= 3) else 0.0
+                    return (fresh_term + reinforce_term, succs, item["score"])
+
+                ready_cands.sort(key=rank_fn, reverse=True)
+                best_c = ready_cands[0]
+            else:
+                # Fallback: traverse up prerequisite chain to foundational weak prerequisite
+                ranked_by_score = sorted(c_info.values(), key=lambda x: x["score"], reverse=True)
+                focus = ranked_by_score[0]
+                curr = focus["cid"]
+                visited = set()
+                while curr and curr not in visited:
+                    visited.add(curr)
+                    p_list = [p for p in kg.predecessors(curr) if p in concepts] if curr in kg else []
+                    unm = [p for p in p_list if c_info[p]["weak"] > 0]
+                    if not unm:
                         break
-                if not weak_prereq:
-                    break
-                focus = weak_prereq
-                curr_cid = focus["cid"]
+                    curr = unm[0]
+                best_c = c_info[curr]
 
-            cid = focus["cid"]
-            weak = focus["weak"]
+            cid = best_c["cid"]
+            weak = best_c["weak"]
 
-            # Prerequisite gap check: does another grade's concept depend on this one while weak?
+            # Prerequisite gap check: does another grade depend on this concept while weak?
             prereq_gap = False
             for other_g in grades:
                 if other_g != g:
                     for ocid in env.concepts_by_grade[other_g]:
-                        if ocid in kg and cid in kg.predecessors(ocid) and weak > 0:
+                        if ocid in kg and (cid in kg.predecessors(ocid) or cid in nx.ancestors(kg, ocid)) and weak > 0:
                             prereq_gap = True
                             break
 
             pressure = weak / n_learners if n_learners > 0 else 0
-            # Formula from generalScheduler.ts:
-            # weight = 1 + pressure * (priority === 'learning-needs' ? 3 : 1) + (prerequisiteGap ? 0.6 : 0) + min(attending, 40)/100
-            weight = 1.0 + pressure * 3.0 + (0.6 if prereq_gap else 0.0) + min(n_learners, 40) / 100.0
+            # Weight incorporates mastery pressure, cross-grade prerequisite gap, and novelty bonus
+            weight = 1.0 + pressure * 3.0 + (1.0 if prereq_gap else 0.0) + (0.5 if best_c["n_t"] == 0 else 0.0)
 
-            grade_needs.append({
+            grade_candidates.append({
                 "grade": g,
                 "concept_id": cid,
                 "weak": weak,
@@ -365,14 +424,12 @@ class CalcmateScheduler(BaseScheduler):
                 "prereq_gap": prereq_gap,
             })
 
-        # 2. Stable topological sorting
-        pending = list(grade_needs)
-        # Sort pending by prereq_gap DESC, weight DESC, grade ASC
+        # 2. Stable topological sorting across grades
+        pending = list(grade_candidates)
         pending.sort(key=lambda x: (x["prereq_gap"], x["weight"], -x["grade"]), reverse=True)
 
         ordered = []
         while pending:
-            # A grade is ready if no other pending grade has a weak concept that is a prerequisite
             ready_idx = -1
             for i, n in enumerate(pending):
                 cid_n = n["concept_id"]
@@ -390,16 +447,37 @@ class CalcmateScheduler(BaseScheduler):
                 ready_idx = 0
             ordered.append(pending.pop(ready_idx))
 
-        # Pick the top grade in ordered rotation
-        # Use round-robin indexing through the topologically sorted list to avoid starvation
         selected = ordered[step % len(ordered)]
 
+        # 3. Safe independent practice tasks for non-teacher grades
         indep = {}
         for g in grades:
             if g != selected["grade"]:
-                # Peer/independent activity uses that grade's own ranked concept
-                g_need = next(n for n in grade_needs if n["grade"] == g)
-                indep[g] = g_need["concept_id"]
+                g_concepts = env.concepts_by_grade[g]
+                g_k = k_estimates[g]
+
+                # Consolidate recently taught concept if its prerequisites are satisfied and needs reinforcement
+                taught_in_g = [
+                    h.concept_id for h in reversed(history)
+                    if h.teacher_grade == g and h.concept_id in g_concepts
+                ]
+                chosen_indep = None
+                for tid in taught_in_g:
+                    t_idx = g_concepts.index(tid)
+                    prereqs = [p for p in kg.predecessors(tid) if p in g_concepts] if tid in kg else []
+                    if not any(np.sum(g_k[:, g_concepts.index(p)] < 0.60) > 0 for p in prereqs):
+                        if np.sum(g_k[:, t_idx] < 0.70) > 0:
+                            chosen_indep = tid
+                            break
+
+                if not chosen_indep:
+                    safe_cands = [
+                        c for c in g_concepts
+                        if not any(np.sum(g_k[:, g_concepts.index(p)] < 0.60) > 0 for p in (kg.predecessors(c) if c in kg else []) if p in g_concepts)
+                    ]
+                    chosen_indep = safe_cands[0] if safe_cands else g_concepts[0]
+
+                indep[g] = chosen_indep
 
         return AllocationDecision(
             teacher_grade=selected["grade"],
@@ -422,6 +500,7 @@ class EvaluationMetrics:
     time_to_mastery: float
     switching_cost: int
     unaddressed_prerequisite_deficit: float
+    mastery_resolution_rate: float = 0.0
 
 
 def run_single_trial(
@@ -583,6 +662,14 @@ def run_single_trial(
                     for u in range(k_mat.shape[0]):
                         total_deficit += max(0.0, 0.70 - k_mat[u, p_idx])
 
+    # 6. Real Mastery Resolution: Initial gaps that achieved full mastery (k_true >= 0.70)
+    mastered_count = 0
+    for g, u, cid in initial_gaps:
+        c_idx = env.concepts_by_grade[g].index(cid)
+        if env.k_true_by_grade[g][u, c_idx] >= BKT.TAU:
+            mastered_count += 1
+    mastery_resolution = mastered_count / max(1, len(initial_gaps))
+
     return EvaluationMetrics(
         learning_gap_coverage=gap_coverage,
         prerequisite_violations=prerequisite_violations,
@@ -590,6 +677,7 @@ def run_single_trial(
         time_to_mastery=avg_ttm,
         switching_cost=switches,
         unaddressed_prerequisite_deficit=total_deficit,
+        mastery_resolution_rate=mastery_resolution,
     )
 
 
@@ -633,11 +721,12 @@ def run_evaluation_suite(
 
     # Compute summary aggregates
     summary = {}
-    print(f"{'Policy':<24} | {'Gap Cov [+]':<11} | {'Prereq Viol [-]':<15} | {'Avg Delay [-]':<13} | {'TTM [-]':<8} | {'Switches':<10} | {'Deficit [-]':<11}")
-    print("-" * 110)
+    print(f"{'Policy':<24} | {'Gap Exp [+]':<11} | {'Mastery [+]':<11} | {'Prereq Viol [-]':<15} | {'Avg Delay [-]':<13} | {'TTM [-]':<8} | {'Switches':<10} | {'Deficit [-]':<11}")
+    print("-" * 125)
 
     for name, m_list in results.items():
         mean_cov = float(np.mean([m.learning_gap_coverage for m in m_list]))
+        mean_mast = float(np.mean([m.mastery_resolution_rate for m in m_list]))
         mean_viol = float(np.mean([m.prerequisite_violations for m in m_list]))
         mean_delay = float(np.mean([m.average_instructional_delay for m in m_list]))
         mean_ttm = float(np.mean([m.time_to_mastery for m in m_list]))
@@ -646,6 +735,7 @@ def run_evaluation_suite(
 
         summary[name] = {
             "learning_gap_coverage": round(mean_cov, 4),
+            "mastery_resolution_rate": round(mean_mast, 4),
             "prerequisite_violations": round(mean_viol, 2),
             "average_instructional_delay": round(mean_delay, 2),
             "time_to_mastery": round(mean_ttm, 2),
@@ -653,9 +743,9 @@ def run_evaluation_suite(
             "unaddressed_prerequisite_deficit": round(mean_def, 2),
         }
 
-        print(f"{name:<24} | {mean_cov*100:>9.1f}% | {mean_viol:>15.1f} | {mean_delay:>13.2f} | {mean_ttm:>8.2f} | {mean_switch:>10.1f} | {mean_def:>11.1f}")
+        print(f"{name:<24} | {mean_cov*100:>9.1f}% | {mean_mast*100:>9.1f}% | {mean_viol:>15.1f} | {mean_delay:>13.2f} | {mean_ttm:>8.2f} | {mean_switch:>10.1f} | {mean_def:>11.1f}")
 
-    print("-" * 110)
+    print("-" * 125)
 
     # Save results to data/stage4_evaluation_results.json
     out_path = _PROJECT_ROOT / "data" / "stage4_evaluation_results.json"

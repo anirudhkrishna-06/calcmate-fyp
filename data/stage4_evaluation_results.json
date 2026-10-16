@@ -1,34 +1,38 @@
 {
   "Round-Robin": {
-    "learning_gap_coverage": 0.1869,
-    "prerequisite_violations": 114.1,
-    "average_instructional_delay": 10.78,
-    "time_to_mastery": 11.2,
+    "learning_gap_coverage": 0.1874,
+    "mastery_resolution_rate": 0.0041,
+    "prerequisite_violations": 111.28,
+    "average_instructional_delay": 10.77,
+    "time_to_mastery": 11.44,
     "switching_cost": 11.0,
-    "unaddressed_prerequisite_deficit": 248.23
+    "unaddressed_prerequisite_deficit": 248.61
   },
   "Static Timetable": {
-    "learning_gap_coverage": 0.1799,
-    "prerequisite_violations": 68.98,
-    "average_instructional_delay": 10.81,
-    "time_to_mastery": 8.58,
+    "learning_gap_coverage": 0.1793,
+    "mastery_resolution_rate": 0.0111,
+    "prerequisite_violations": 67.4,
+    "average_instructional_delay": 10.78,
+    "time_to_mastery": 8.53,
     "switching_cost": 2.0,
-    "unaddressed_prerequisite_deficit": 234.3
+    "unaddressed_prerequisite_deficit": 235.64
   },
   "Needs-Only (Ablated)": {
-    "learning_gap_coverage": 0.1744,
-    "prerequisite_violations": 232.3,
+    "learning_gap_coverage": 0.176,
+    "mastery_resolution_rate": 0.0033,
+    "prerequisite_violations": 235.68,
     "average_instructional_delay": 10.95,
-    "time_to_mastery": 9.85,
-    "switching_cost": 4.64,
-    "unaddressed_prerequisite_deficit": 257.34
+    "time_to_mastery": 9.6,
+    "switching_cost": 4.48,
+    "unaddressed_prerequisite_deficit": 259.49
   },
   "CALCMATE": {
-    "learning_gap_coverage": 0.0786,
-    "prerequisite_violations": 0.02,
-    "average_instructional_delay": 11.4,
-    "time_to_mastery": 7.67,
-    "switching_cost": 8.68,
-    "unaddressed_prerequisite_deficit": 235.56
+    "learning_gap_coverage": 0.1688,
+    "mastery_resolution_rate": 0.0077,
+    "prerequisite_violations": 0.0,
+    "average_instructional_delay": 10.81,
+    "time_to_mastery": 10.41,
+    "switching_cost": 9.12,
+    "unaddressed_prerequisite_deficit": 222.16
   }
 }

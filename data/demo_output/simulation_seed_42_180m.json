@@ -1,0 +1,435 @@
+{
+  "kind": "general-schedule",
+  "version": 1,
+  "selection": {
+    "date": "2026-10-15",
+    "availableMinutes": 180,
+    "grades": [
+      3,
+      4,
+      5
+    ],
+    "priority": "learning-needs"
+  },
+  "needs": [
+    {
+      "grade": 3,
+      "students": 8,
+      "attending": 7,
+      "missing": 4,
+      "weak": 3,
+      "prerequisiteGap": true,
+      "conceptId": "M307",
+      "concept": "Multiplication as repeated addition",
+      "objective": "Explain and practise multiplication as repeated addition.",
+      "weight": 3.555714285714286,
+      "reason": "3 of 7 students need revision; prerequisite first."
+    },
+    {
+      "grade": 4,
+      "students": 8,
+      "attending": 7,
+      "missing": 6,
+      "weak": 1,
+      "prerequisiteGap": true,
+      "conceptId": "M402",
+      "concept": "Multiplication of 2-digit numbers",
+      "objective": "Explain and practise multiplication of 2-digit numbers.",
+      "weight": 2.998571428571428,
+      "reason": "1 of 7 students need revision; prerequisite first."
+    },
+    {
+      "grade": 5,
+      "students": 8,
+      "attending": 5,
+      "missing": 2,
+      "weak": 3,
+      "prerequisiteGap": true,
+      "conceptId": "M511",
+      "concept": "Types of triangles",
+      "objective": "Explain and practise types of triangles.",
+      "weight": 3.8699999999999997,
+      "reason": "3 of 5 students need revision; prerequisite first."
+    }
+  ],
+  "warnings": [],
+  "blocks": [
+    {
+      "id": "block-1",
+      "kind": "opening",
+      "durationMinutes": 3,
+      "teacherGrade": null,
+      "teacherActivity": "Lead a common number talk; set out tasks for each grade.",
+      "reason": "Prepare all grades for independent work.",
+      "status": "planned",
+      "activities": [
+        {
+          "grade": 3,
+          "concept": "Multiplication as repeated addition",
+          "objective": "Explain and practise multiplication as repeated addition.",
+          "activity": "Join the number talk and collect materials."
+        },
+        {
+          "grade": 4,
+          "concept": "Multiplication of 2-digit numbers",
+          "objective": "Explain and practise multiplication of 2-digit numbers.",
+          "activity": "Join the number talk and collect materials."
+        },
+        {
+          "grade": 5,
+          "concept": "Types of triangles",
+          "objective": "Explain and practise types of triangles.",
+          "activity": "Join the number talk and collect materials."
+        }
+      ]
+    },
+    {
+      "id": "block-2",
+      "kind": "instruction",
+      "durationMinutes": 31,
+      "teacherGrade": 5,
+      "teacherActivity": "Check readiness, then guide practice in types of triangles.",
+      "reason": "3 of 5 students need revision; prerequisite first.",
+      "status": "planned",
+      "activities": [
+        {
+          "grade": 3,
+          "concept": "Multiplication as repeated addition",
+          "objective": "Explain and practise multiplication as repeated addition.",
+          "activity": "Pair practice in multiplication as repeated addition: take turns solving four examples; compare methods and mark one question to ask."
+        },
+        {
+          "grade": 4,
+          "concept": "Multiplication of 2-digit numbers",
+          "objective": "Explain and practise multiplication of 2-digit numbers.",
+          "activity": "Pair practice in multiplication of 2-digit numbers: take turns solving four examples; compare methods and mark one question to ask."
+        },
+        {
+          "grade": 5,
+          "concept": "Types of triangles",
+          "objective": "Explain and practise types of triangles.",
+          "activity": "Work with the teacher on types of triangles."
+        }
+      ]
+    },
+    {
+      "id": "block-3",
+      "kind": "transition",
+      "durationMinutes": 1,
+      "teacherGrade": null,
+      "teacherActivity": "Check independent groups and switch the teacher group.",
+      "reason": "Allow time to move between grades.",
+      "status": "planned",
+      "activities": [
+        {
+          "grade": 3,
+          "concept": "Multiplication as repeated addition",
+          "objective": "Explain and practise multiplication as repeated addition.",
+          "activity": "Finish the current question and prepare the next task."
+        },
+        {
+          "grade": 4,
+          "concept": "Multiplication of 2-digit numbers",
+          "objective": "Explain and practise multiplication of 2-digit numbers.",
+          "activity": "Finish the current question and prepare the next task."
+        },
+        {
+          "grade": 5,
+          "concept": "Types of triangles",
+          "objective": "Explain and practise types of triangles.",
+          "activity": "Finish the current question and prepare the next task."
+        }
+      ]
+    },
+    {
+      "id": "block-4",
+      "kind": "instruction",
+      "durationMinutes": 29,
+      "teacherGrade": 3,
+      "teacherActivity": "Check readiness, then guide practice in multiplication as repeated addition.",
+      "reason": "3 of 7 students need revision; prerequisite first.",
+      "status": "planned",
+      "activities": [
+        {
+          "grade": 3,
+          "concept": "Multiplication as repeated addition",
+          "objective": "Explain and practise multiplication as repeated addition.",
+          "activity": "Work with the teacher on multiplication as repeated addition."
+        },
+        {
+          "grade": 4,
+          "concept": "Multiplication of 2-digit numbers",
+          "objective": "Explain and practise multiplication of 2-digit numbers.",
+          "activity": "Independent multiplication of 2-digit numbers worksheet: solve four examples, explain one answer, then try an extension question."
+        },
+        {
+          "grade": 5,
+          "concept": "Types of triangles",
+          "objective": "Explain and practise types of triangles.",
+          "activity": "Independent types of triangles worksheet: solve four examples, explain one answer, then try an extension question."
+        }
+      ]
+    },
+    {
+      "id": "block-5",
+      "kind": "transition",
+      "durationMinutes": 1,
+      "teacherGrade": null,
+      "teacherActivity": "Check independent groups and switch the teacher group.",
+      "reason": "Allow time to move between grades.",
+      "status": "planned",
+      "activities": [
+        {
+          "grade": 3,
+          "concept": "Multiplication as repeated addition",
+          "objective": "Explain and practise multiplication as repeated addition.",
+          "activity": "Finish the current question and prepare the next task."
+        },
+        {
+          "grade": 4,
+          "concept": "Multiplication of 2-digit numbers",
+          "objective": "Explain and practise multiplication of 2-digit numbers.",
+          "activity": "Finish the current question and prepare the next task."
+        },
+        {
+          "grade": 5,
+          "concept": "Types of triangles",
+          "objective": "Explain and practise types of triangles.",
+          "activity": "Finish the current question and prepare the next task."
+        }
+      ]
+    },
+    {
+      "id": "block-6",
+      "kind": "instruction",
+      "durationMinutes": 25,
+      "teacherGrade": 4,
+      "teacherActivity": "Check readiness, then guide practice in multiplication of 2-digit numbers.",
+      "reason": "1 of 7 students need revision; prerequisite first.",
+      "status": "planned",
+      "activities": [
+        {
+          "grade": 3,
+          "concept": "Multiplication as repeated addition",
+          "objective": "Explain and practise multiplication as repeated addition.",
+          "activity": "Pair practice in multiplication as repeated addition: take turns solving four examples; compare methods and mark one question to ask."
+        },
+        {
+          "grade": 4,
+          "concept": "Multiplication of 2-digit numbers",
+          "objective": "Explain and practise multiplication of 2-digit numbers.",
+          "activity": "Work with the teacher on multiplication of 2-digit numbers."
+        },
+        {
+          "grade": 5,
+          "concept": "Types of triangles",
+          "objective": "Explain and practise types of triangles.",
+          "activity": "Pair practice in types of triangles: take turns solving four examples; compare methods and mark one question to ask."
+        }
+      ]
+    },
+    {
+      "id": "block-7",
+      "kind": "transition",
+      "durationMinutes": 1,
+      "teacherGrade": null,
+      "teacherActivity": "Check independent groups and switch the teacher group.",
+      "reason": "Allow time to move between grades.",
+      "status": "planned",
+      "activities": [
+        {
+          "grade": 3,
+          "concept": "Multiplication as repeated addition",
+          "objective": "Explain and practise multiplication as repeated addition.",
+          "activity": "Finish the current question and prepare the next task."
+        },
+        {
+          "grade": 4,
+          "concept": "Multiplication of 2-digit numbers",
+          "objective": "Explain and practise multiplication of 2-digit numbers.",
+          "activity": "Finish the current question and prepare the next task."
+        },
+        {
+          "grade": 5,
+          "concept": "Types of triangles",
+          "objective": "Explain and practise types of triangles.",
+          "activity": "Finish the current question and prepare the next task."
+        }
+      ]
+    },
+    {
+      "id": "block-8",
+      "kind": "instruction",
+      "durationMinutes": 31,
+      "teacherGrade": 5,
+      "teacherActivity": "Check readiness, then guide practice in types of triangles.",
+      "reason": "3 of 5 students need revision; prerequisite first.",
+      "status": "planned",
+      "activities": [
+        {
+          "grade": 3,
+          "concept": "Multiplication as repeated addition",
+          "objective": "Explain and practise multiplication as repeated addition.",
+          "activity": "Independent multiplication as repeated addition worksheet: solve four examples, explain one answer, then try an extension question."
+        },
+        {
+          "grade": 4,
+          "concept": "Multiplication of 2-digit numbers",
+          "objective": "Explain and practise multiplication of 2-digit numbers.",
+          "activity": "Independent multiplication of 2-digit numbers worksheet: solve four examples, explain one answer, then try an extension question."
+        },
+        {
+          "grade": 5,
+          "concept": "Types of triangles",
+          "objective": "Explain and practise types of triangles.",
+          "activity": "Work with the teacher on types of triangles."
+        }
+      ]
+    },
+    {
+      "id": "block-9",
+      "kind": "transition",
+      "durationMinutes": 1,
+      "teacherGrade": null,
+      "teacherActivity": "Check independent groups and switch the teacher group.",
+      "reason": "Allow time to move between grades.",
+      "status": "planned",
+      "activities": [
+        {
+          "grade": 3,
+          "concept": "Multiplication as repeated addition",
+          "objective": "Explain and practise multiplication as repeated addition.",
+          "activity": "Finish the current question and prepare the next task."
+        },
+        {
+          "grade": 4,
+          "concept": "Multiplication of 2-digit numbers",
+          "objective": "Explain and practise multiplication of 2-digit numbers.",
+          "activity": "Finish the current question and prepare the next task."
+        },
+        {
+          "grade": 5,
+          "concept": "Types of triangles",
+          "objective": "Explain and practise types of triangles.",
+          "activity": "Finish the current question and prepare the next task."
+        }
+      ]
+    },
+    {
+      "id": "block-10",
+      "kind": "instruction",
+      "durationMinutes": 29,
+      "teacherGrade": 3,
+      "teacherActivity": "Check readiness, then guide practice in multiplication as repeated addition.",
+      "reason": "3 of 7 students need revision; prerequisite first.",
+      "status": "planned",
+      "activities": [
+        {
+          "grade": 3,
+          "concept": "Multiplication as repeated addition",
+          "objective": "Explain and practise multiplication as repeated addition.",
+          "activity": "Work with the teacher on multiplication as repeated addition."
+        },
+        {
+          "grade": 4,
+          "concept": "Multiplication of 2-digit numbers",
+          "objective": "Explain and practise multiplication of 2-digit numbers.",
+          "activity": "Pair practice in multiplication of 2-digit numbers: take turns solving four examples; compare methods and mark one question to ask."
+        },
+        {
+          "grade": 5,
+          "concept": "Types of triangles",
+          "objective": "Explain and practise types of triangles.",
+          "activity": "Pair practice in types of triangles: take turns solving four examples; compare methods and mark one question to ask."
+        }
+      ]
+    },
+    {
+      "id": "block-11",
+      "kind": "transition",
+      "durationMinutes": 1,
+      "teacherGrade": null,
+      "teacherActivity": "Check independent groups and switch the teacher group.",
+      "reason": "Allow time to move between grades.",
+      "status": "planned",
+      "activities": [
+        {
+          "grade": 3,
+          "concept": "Multiplication as repeated addition",
+          "objective": "Explain and practise multiplication as repeated addition.",
+          "activity": "Finish the current question and prepare the next task."
+        },
+        {
+          "grade": 4,
+          "concept": "Multiplication of 2-digit numbers",
+          "objective": "Explain and practise multiplication of 2-digit numbers.",
+          "activity": "Finish the current question and prepare the next task."
+        },
+        {
+          "grade": 5,
+          "concept": "Types of triangles",
+          "objective": "Explain and practise types of triangles.",
+          "activity": "Finish the current question and prepare the next task."
+        }
+      ]
+    },
+    {
+      "id": "block-12",
+      "kind": "instruction",
+      "durationMinutes": 25,
+      "teacherGrade": 4,
+      "teacherActivity": "Check readiness, then guide practice in multiplication of 2-digit numbers.",
+      "reason": "1 of 7 students need revision; prerequisite first.",
+      "status": "planned",
+      "activities": [
+        {
+          "grade": 3,
+          "concept": "Multiplication as repeated addition",
+          "objective": "Explain and practise multiplication as repeated addition.",
+          "activity": "Independent multiplication as repeated addition worksheet: solve four examples, explain one answer, then try an extension question."
+        },
+        {
+          "grade": 4,
+          "concept": "Multiplication of 2-digit numbers",
+          "objective": "Explain and practise multiplication of 2-digit numbers.",
+          "activity": "Work with the teacher on multiplication of 2-digit numbers."
+        },
+        {
+          "grade": 5,
+          "concept": "Types of triangles",
+          "objective": "Explain and practise types of triangles.",
+          "activity": "Independent types of triangles worksheet: solve four examples, explain one answer, then try an extension question."
+        }
+      ]
+    },
+    {
+      "id": "block-13",
+      "kind": "closing",
+      "durationMinutes": 2,
+      "teacherGrade": null,
+      "teacherActivity": "Review one solution per grade and collect exit questions.",
+      "reason": "Check understanding across the classroom.",
+      "status": "planned",
+      "activities": [
+        {
+          "grade": 3,
+          "concept": "Multiplication as repeated addition",
+          "objective": "Explain and practise multiplication as repeated addition.",
+          "activity": "Share one solution and complete an exit question."
+        },
+        {
+          "grade": 4,
+          "concept": "Multiplication of 2-digit numbers",
+          "objective": "Explain and practise multiplication of 2-digit numbers.",
+          "activity": "Share one solution and complete an exit question."
+        },
+        {
+          "grade": 5,
+          "concept": "Types of triangles",
+          "objective": "Explain and practise types of triangles.",
+          "activity": "Share one solution and complete an exit question."
+        }
+      ]
+    }
+  ]
+}
