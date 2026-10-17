@@ -17,7 +17,7 @@ export function ClassProgress({grade}:{grade:number}){
     {data?.progress.map(item=><Section key={item.concept.id} title={item.concept.title} detail={`${item.secure} secure · ${item.practicing} practicing · ${item.revision.length} need revision · ${item.missing} not assessed`}>
       <AppText>{item.revision.length?'Model another example, then check understanding.':item.recorded?'Continue practice and check understanding.':'No marks yet. Start with a readiness check.'}</AppText>
       {item.revision.map(student=><ActionRow key={student.id} title={student.name} detail={`Roll ${student.roll} · Open progress and teacher notes`} onPress={()=>router.push({pathname:"/students/[id]",params:{id:student.id,tab:"observations"}})}/>)}
-      <Button label="Explain this concept" variant="quiet" onPress={()=>router.push({pathname:"/chatbot",params:{grade:String(grade),prompt:`Explain ${item.concept.title.toLowerCase()} for Grade ${grade} Maths. Suggest one concrete classroom activity and one understanding check.`}})}/>
+      <Button label="Explain this concept" variant="quiet" onPress={()=>router.push({pathname:"/chatbot",params:{grade:String(grade),prompt:`Explain ${item.concept.title.toLowerCase()} for Grade ${grade} Maths. Suggest one concrete classroom activity and one understanding check.`,conceptId:item.concept.id,screenContext:"class_progress"}})}/>
     </Section>)}
   </View>;
 }

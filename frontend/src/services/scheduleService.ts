@@ -17,6 +17,13 @@ export async function readPlanningPayload(selection:PlanningSelection):Promise<P
     const assessments = await tx.getAllAsync<AssessmentRecord>("SELECT a.* FROM assessments a JOIN students s ON s.workspace_id=a.workspace_id AND s.id=a.student_id WHERE a.workspace_id=? AND s.grade=? AND a.date<=? ORDER BY a.date,a.id",w,selection.grade,selection.date);
     const competencies = await tx.getAllAsync<CompetencyRecord>("SELECT c.* FROM competencies c JOIN students s ON s.workspace_id=c.workspace_id AND s.id=c.student_id WHERE c.workspace_id=? AND s.grade=? AND c.updated_at<=? ORDER BY c.id",w,selection.grade,cutoff);
     const concepts = await tx.getAllAsync<ConceptRecord>("SELECT * FROM concepts WHERE workspace_id=? ORDER BY id",w);
+    const edgeRows = await tx.getAllAsync<{ concept_id:string; prerequisite_id:string }>("SELECT concept_id,prerequisite_id FROM concept_prerequisites WHERE workspace_id=?",w);
+    const edgeMap = new Map<string,string[]>();
+    for (const edge of edgeRows) edgeMap.set(edge.concept_id,[...(edgeMap.get(edge.concept_id) ?? []),edge.prerequisite_id]);
+    for (const concept of concepts) {
+      const edges = edgeMap.get(concept.id);
+      if (edges?.length) concept.prerequisite_ids = edges;
+    }
     return {version:1,workspaceId:w,teacherId:session.teacherId,selection:{...selection},students,attendance,assessments,competencies,concepts};
   });
 }

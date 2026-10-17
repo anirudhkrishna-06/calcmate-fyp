@@ -53,8 +53,38 @@ export function generateMockPlan(payload:PlanningPayload):ScheduleDraft {
   const targets = concepts.filter(c => c.grade === payload.selection.grade);
   if (!students.length) throw new Error("Add students or review recorded absences before generating a plan.");
   if (!targets.length) throw new Error("No local Maths concepts are available for this grade.");
+  const maxLessons = Math.max(1, Math.min(4, Math.floor((payload.selection.availableMinutes - 5) / 12)));
+  let candidateConcepts = concepts;
+  if (candidateConcepts.length > maxLessons) {
+    const scored = candidateConcepts.map(c => {
+      const weak = students.filter(s => { const v = conceptEvidence(payload, s.id, c.id); return v !== null && v < 0.6; }).length;
+      const unknown = students.filter(s => conceptEvidence(payload, s.id, c.id) === null).length;
+      return { concept: c, score: weak * 2 + unknown };
+    });
+    const selectedIds = new Set<string>();
+    const sorted = [...scored].sort((a, b) => b.score - a.score || a.concept.id.localeCompare(b.concept.id));
+    for (const item of sorted) {
+      if (selectedIds.size >= maxLessons) break;
+      let curr: string | null = item.concept.id;
+      const chain: string[] = [];
+      while (curr) {
+        chain.unshift(curr);
+        const parent = candidateConcepts.find(c => c.id === curr)?.prerequisite_id ?? null;
+        curr = parent && candidateConcepts.some(c => c.id === parent) ? parent : null;
+      }
+      for (const id of chain) {
+        if (selectedIds.size < maxLessons || selectedIds.has(id)) {
+          selectedIds.add(id);
+        }
+      }
+    }
+    candidateConcepts = candidateConcepts.filter(c => selectedIds.has(c.id));
+    if (!candidateConcepts.length && concepts.length) {
+      candidateConcepts = concepts.slice(0, maxLessons);
+    }
+  }
   const lessons:Lesson[] = [];
-  for (const concept of concepts) {
+  for (const concept of candidateConcepts) {
     const weak = students.filter(s => { const value=conceptEvidence(payload,s.id,concept.id); return value!==null && value<0.6; });
     const unknown = students.filter(s => conceptEvidence(payload,s.id,concept.id) === null);
     const target = concept.grade === payload.selection.grade;

@@ -16,8 +16,8 @@ import { requireSession } from "./authService";
 
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const MASTERY_THRESHOLD = 0.70;
-const NEEDS_SUPPORT_THRESHOLD = 0.60;
+export const MASTERY_THRESHOLD = 0.70;
+export const NEEDS_SUPPORT_THRESHOLD = 0.60;
 const ESTIMATOR_NAME = "score-ratio-v1";
 const ESTIMATOR_VERSION = "1";
 

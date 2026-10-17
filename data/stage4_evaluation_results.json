@@ -18,13 +18,13 @@
     "unaddressed_prerequisite_deficit": 235.64
   },
   "Needs-Only (Ablated)": {
-    "learning_gap_coverage": 0.176,
-    "mastery_resolution_rate": 0.0033,
-    "prerequisite_violations": 235.68,
-    "average_instructional_delay": 10.95,
-    "time_to_mastery": 9.6,
-    "switching_cost": 4.48,
-    "unaddressed_prerequisite_deficit": 259.49
+    "learning_gap_coverage": 0.1747,
+    "mastery_resolution_rate": 0.0032,
+    "prerequisite_violations": 237.12,
+    "average_instructional_delay": 10.94,
+    "time_to_mastery": 10.15,
+    "switching_cost": 4.56,
+    "unaddressed_prerequisite_deficit": 259.74
   },
   "CALCMATE": {
     "learning_gap_coverage": 0.1688,

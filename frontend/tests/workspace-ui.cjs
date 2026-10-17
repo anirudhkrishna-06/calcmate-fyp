@@ -2,6 +2,8 @@ const assert=require('node:assert/strict');const fs=require('node:fs');const pat
 const React=require('react');const {create,act}=require('react-test-renderer');global.IS_REACT_ACT_ENVIRONMENT=true;
 let session=null,listener,alert,available=true,approved=false,signupCount=0,savedAttendance,savedMarks,savedLessons,savedRotation,createdSelection,restored=false,selectedGrade=1,preventDirty=false,preventCallback;
 let approvalStatus='pending';
+let testSession={id:'sess1',workspace_id:'demo',schedule_id:'g1',grade:1,date:'2026-10-10',started_at:'2026-10-10T09:00:00Z',ended_at:null,status:'active',current_block_index:0,elapsed_seconds:60,created_at:'2026-10-10T09:00:00Z',updated_at:'2026-10-10T09:00:00Z'};
+let savedOutcomes=null, recordedEvents=[];
 const gradeListeners=new Set();const draftStore=new Map();
 class ApiError extends Error {constructor(message,status,code){super(message);this.status=status;this.code=code;}}
 const routes=[];const teacher={id:'t1',name:'Teacher Rao',schoolName:'School',grades:[1,2],experience:3,preferredSubject:'Math'};
@@ -39,8 +41,22 @@ Module._load=function(request,parent,isMain){
   if(request==='@/services/database')return {today:()=> '2026-10-10',getDatabase:async()=>({getFirstAsync:async(sql,key)=>draftStore.has(key)?{value:draftStore.get(key)}:null,runAsync:async(sql,key,value)=>{draftStore.set(key,value);}})};
   if(request==='@/services/storageService')return {loadTeacher:async()=>teacher,storageSummary:async()=>({students:2,assessments:2,plans:1}),loadStudents:async search=>students.filter(s=>!search||s.name.includes(search)||s.rollNumber.includes(search)),saveClassAssessments:async value=>{savedMarks=value;return value.entries.length;}};
   if(request==='@/services/generalScheduleService')return {listGeneralSchedules:async()=>[general],loadGeneralSchedule:async()=>general,createGeneralSchedule:async selection=>{createdSelection=selection;return general;},saveGeneralBlocks:async(id,blocks)=>{savedRotation=blocks;general.blocks=blocks;return general;}};
+  if(request==='@/services/sessionService')return {
+    effectiveElapsedSeconds:session=>session.elapsed_seconds,
+    startClassSession:async()=>testSession,
+    getActiveSession:async()=>testSession,
+    getSessionById:async()=>testSession,
+    updateSessionProgress:async(id,idx,sec)=>{testSession.current_block_index=idx;testSession.elapsed_seconds=sec;},
+    pauseClassSession:async()=>{testSession.status='paused';},
+    resumeClassSession:async()=>{testSession.status='active';},
+    completeClassSession:async()=>{testSession.status='completed';return testSession;},
+    recordSessionAttendanceEvent:async(sid,stId,ev)=>{const rec={id:'ev1',session_id:sid,student_id:stId,event_type:ev,recorded_at:'2026-10-10T09:10:00Z'};recordedEvents.push(rec);return rec;},
+    getSessionAttendanceEvents:async()=>recordedEvents,
+    saveSessionOutcomes:async(sid,outcomes,focus,obs)=>{savedOutcomes={sid,outcomes,focus,obs};},
+    getSessionOutcomes:async()=>[]
+  };
   if(request==='@/services/classroomService')return {
-    classroomSummary:async()=>({teacher,mode:session?.mode,students:2,present:0,recorded:1,revision:1,grades:[{grade:1,total:2}],revisionStudents:[{id:'s2',name:'Diya',concept:'Counting'}]}),
+    classroomSummary:async()=>({teacher,mode:session?.mode,students:2,present:0,recorded:1,revision:1,grades:[{grade:1,total:2}],revisionStudents:[{id:'s2',name:'Diya',concept:'Counting'}],activeSession:testSession}),
     classLearningEvidence:async()=>({students:students.map(s=>({...s,roll:s.rollNumber})),concepts:[{id:"count",title:"Counting",grade:1,prerequisite_id:null}],progress:[{concept:{id:"count",title:"Counting"},recorded:1,missing:1,secure:0,practicing:0,revision:[{id:"s2",name:"Diya",roll:"02",mastery:0.4}]}]}),
     attendanceRegister:async()=>students.map(s=>({...s})),saveClassAttendance:async(grade,date,entries)=>{savedAttendance=entries;entries.forEach(e=>students.find(s=>s.id===e.studentId).status=e.status);}
   };
@@ -108,6 +124,42 @@ async function run(){
   await act(async()=>button(root,'Edit block').props.onPress());await input(root,'Teacher activity','Edited teacher activity');await input(root,'Grade 2 activity','Use place-value counters');
   await act(async()=>button(root,'Postponed').props.onPress());assert.equal(preventDirty,true);
   await act(async()=>button(root,'Save changes').props.onPress());assert.equal(savedRotation[0].status,'postponed');assert.equal(savedRotation[0].teacherActivity,'Edited teacher activity');assert.equal(savedRotation[0].activities[1].activity,'Use place-value counters');assert.equal(preventDirty,false);
+  assert.ok(button(root,'Start active class'));
+  await act(async()=>button(root,'Start active class').props.onPress());
+  assert.equal(routes.at(-1)?.pathname || routes.at(-1),'/active-session');
+
+  // FE-002 / ACC-13, FE-007: Active session execution & mid-class attendance
+  root=await mount('../app/active-session');
+  assert.ok(text(root).includes('Active Class Execution'));
+  assert.ok(text(root).includes('Block 1 of 1'));
+  assert.ok(button(root,'Pause'));
+  await act(async()=>button(root,'Pause').props.onPress());
+  assert.equal(testSession.status,'paused');
+  assert.ok(button(root,'Resume'));
+  await act(async()=>button(root,'Resume').props.onPress());
+  assert.equal(testSession.status,'active');
+  assert.ok(button(root,'Attendance note'));
+  await act(async()=>button(root,'Attendance note').props.onPress());
+  await act(async()=>button(root,'Gr 1 · Roll 01 · Aarav').props.onPress());
+  await act(async()=>button(root,'Left Early').props.onPress());
+  assert.equal(recordedEvents.length,1);
+  assert.equal(recordedEvents[0].event_type,'left');
+  await act(async()=>button(root,'Close').props.onPress());
+
+  // FE-006 / ACC-14: Post-class review, delivery confirmation, focus students, observations
+  root=await mount('../app/post-class-review');
+  assert.ok(text(root).includes('Post-Class Review'));
+  assert.ok(text(root).includes('Rotation Block Delivery'));
+  assert.ok(button(root,'Postponed ✕'));
+  await act(async()=>button(root,'Postponed ✕').props.onPress());
+  assert.ok(button(root,'Delivered ✓'));
+  await act(async()=>button(root,'Gr 1 · Aarav').props.onPress());
+  await input(root,'Learning observation','Students excelled with group work.');
+  await act(async()=>button(root,'Save Review & Conclude').props.onPress());
+  assert.ok(savedOutcomes);
+  assert.equal(savedOutcomes.focus[0],'s1');
+  assert.equal(savedOutcomes.obs,'Students excelled with group work.');
+  assert.ok(text(root).includes('Review Saved!'));
   root=await mount('../app/schedule/generated');await act(async()=>button(root,'Review learning needs').props.onPress());assert.ok(button(root,'Generate plan'));assert.equal(button(root,'Advanced / developer details'),undefined);assert.ok(!text(root).includes('workspaceId'));
   await act(async()=>button(root,'Generate plan').props.onPress());assert.equal(routes.at(-1),'/schedule/p1');
   root=await mount('../app/schedule/[id]');assert.ok(!text(root).includes('developer details'));await act(async()=>button(root,'Edit activity').props.onPress());await input(root,'Activity title','Teacher edited practice');

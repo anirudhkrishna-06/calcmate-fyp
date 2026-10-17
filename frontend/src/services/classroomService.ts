@@ -1,4 +1,4 @@
-import { assertScope,today,withTransaction,AttendanceRecord,ConceptRecord } from "./database";
+import { assertScope,today,withTransaction,AttendanceRecord,ConceptRecord,ClassSessionRecord } from "./database";
 import { requireSession } from "./authService";
 import { loadTeacher,loadStudents,validateDate } from "./storageService";
 import { getScheduleSummary } from "./scheduleService";
@@ -16,11 +16,18 @@ export async function classroomSummary(grade=0) {
     const revisionStudents=await tx.getAllAsync<{id:string;name:string;concept:string}>(`SELECT s.id,s.name,k.title concept FROM students s JOIN competencies c ON c.workspace_id=s.workspace_id AND c.student_id=s.id JOIN concepts k ON k.workspace_id=c.workspace_id AND k.id=c.concept_id WHERE s.workspace_id=? AND c.mastery<0.6 AND (?=0 OR s.grade=?) ORDER BY c.mastery,s.name LIMIT 5`,w,grade,grade);
     return {...counts!,grades,revisionStudents};
   });
-  const [{plans},rotations]=await Promise.all([getScheduleSummary(),listGeneralSchedules()]);
+  const [{plans},rotations,activeSession]=await Promise.all([
+    getScheduleSummary(),
+    listGeneralSchedules(),
+    withTransaction(async tx=>{
+      await assertScope(tx,session);
+      return tx.getFirstAsync<ClassSessionRecord>("SELECT * FROM class_sessions WHERE workspace_id=? AND date=? AND status IN ('active','paused') ORDER BY created_at DESC LIMIT 1",session.workspaceId,today());
+    })
+  ]);
   const matching=plans.filter(p=>!grade||p.selection.grade===grade);
   const upcoming=matching.filter(p=>p.selection.date>=today()).sort((a,b)=>a.selection.date.localeCompare(b.selection.date))[0];
   const rotation=rotations.filter(r=>r.selection.date>=today()).sort((a,b)=>a.selection.date.localeCompare(b.selection.date))[0];
-  return {...summary,teacher:await loadTeacher(),mode:session.mode,presentationRoster:session.presentationRoster===true,rotation,plan:upcoming ?? matching[0],upcoming:!!upcoming};
+  return {...summary,teacher:await loadTeacher(),mode:session.mode,presentationRoster:session.presentationRoster===true,rotation,plan:upcoming ?? matching[0],upcoming:!!upcoming,activeSession};
 }
 export async function attendanceRegister(grade:number,date:string) {
   validateDate(date);if(![1,2,3,4].includes(grade))throw new Error("Select a grade.");

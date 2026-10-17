@@ -42,6 +42,8 @@ const balancedWeak=buildGeneralSchedule(selection,weakPayload);
 assert.ok(minutesFor(weak,4)>minutesFor(balancedWeak,4));
 const prerequisite=[evidence(1,0.3),evidence(2,0.1)];prerequisite[1].concepts[0].prerequisite_id='c1';
 assert.equal(buildGeneralSchedule({...selection,grades:[1,2]},prerequisite).blocks.find(b=>b.teacherGrade).teacherGrade,1);
+const multiPrerequisite=[evidence(1,0.3),evidence(2,0.9)];multiPrerequisite[1].concepts[0].prerequisite_id=null;multiPrerequisite[1].concepts[0].prerequisite_ids=['c1','missing'];
+assert.equal(buildGeneralSchedule({...selection,grades:[1,2]},multiPrerequisite).blocks.find(b=>b.teacherGrade).teacherGrade,1);
 const missing=payload.map(p=>({...p,competencies:[],assessments:[]}));
 const incomplete=buildGeneralSchedule(selection,missing);validateGeneralDraft(incomplete);assert.ok(incomplete.needs.every(n=>n.missing===8&&n.weak===0));
 const unregistered=buildGeneralSchedule(selection,[]);validateGeneralDraft(unregistered);assert.ok(unregistered.warnings.length);

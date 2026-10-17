@@ -107,7 +107,45 @@ export const migrations = [
      FOREIGN KEY(workspace_id,concept_id) REFERENCES concepts(workspace_id,id) ON DELETE CASCADE);
    CREATE INDEX IF NOT EXISTS lcs_student ON learner_concept_states(workspace_id,student_id);
    CREATE INDEX IF NOT EXISTS lcs_concept ON learner_concept_states(workspace_id,concept_id);
-   CREATE INDEX IF NOT EXISTS lcs_status  ON learner_concept_states(workspace_id,state_status);`
+   CREATE INDEX IF NOT EXISTS lcs_status  ON learner_concept_states(workspace_id,state_status);`,
+  `CREATE TABLE IF NOT EXISTS class_sessions (
+     id TEXT NOT NULL,
+     workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+     schedule_id TEXT,
+     grade INTEGER,
+     date TEXT NOT NULL,
+     started_at TEXT NOT NULL,
+     ended_at TEXT,
+     status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','paused','completed')),
+     current_block_index INTEGER NOT NULL DEFAULT 0,
+     elapsed_seconds INTEGER NOT NULL DEFAULT 0,
+     created_at TEXT NOT NULL,
+     updated_at TEXT NOT NULL,
+     PRIMARY KEY(workspace_id, id));
+   CREATE INDEX IF NOT EXISTS class_sessions_date ON class_sessions(workspace_id, date);
+   CREATE TABLE IF NOT EXISTS session_attendance_events (
+     id TEXT NOT NULL,
+     workspace_id TEXT NOT NULL,
+     session_id TEXT NOT NULL,
+     student_id TEXT NOT NULL,
+     event_type TEXT NOT NULL CHECK(event_type IN ('arrived','left','returned')),
+     recorded_at TEXT NOT NULL,
+     PRIMARY KEY(workspace_id, id),
+     FOREIGN KEY(workspace_id, session_id) REFERENCES class_sessions(workspace_id, id) ON DELETE CASCADE,
+     FOREIGN KEY(workspace_id, student_id) REFERENCES students(workspace_id, id) ON DELETE CASCADE);
+   CREATE INDEX IF NOT EXISTS sae_session ON session_attendance_events(workspace_id, session_id);
+   CREATE TABLE IF NOT EXISTS session_outcomes (
+     id TEXT NOT NULL,
+     workspace_id TEXT NOT NULL,
+     session_id TEXT NOT NULL,
+     block_id TEXT NOT NULL,
+     delivered INTEGER NOT NULL DEFAULT 1,
+     notes TEXT,
+     created_at TEXT NOT NULL,
+     updated_at TEXT NOT NULL,
+     PRIMARY KEY(workspace_id, id),
+     FOREIGN KEY(workspace_id, session_id) REFERENCES class_sessions(workspace_id, id) ON DELETE CASCADE);
+   CREATE INDEX IF NOT EXISTS session_outcomes_session ON session_outcomes(workspace_id, session_id);`
 ];
 
 let opening: Promise<SQLite.SQLiteDatabase> | undefined;
@@ -153,6 +191,7 @@ export type ConceptRecord = BaseRecord & {
   title: string;
   grade: number;
   prerequisite_id: string | null;
+  prerequisite_ids?: string[];
   learning_objective?: string | null;
   coverage_status?: string | null;
   is_active?: number | null;
@@ -175,6 +214,41 @@ export type LearnerConceptStateRecord = {
   evidence_sufficiency: "none" | "limited" | "moderate" | "sufficient";
   updated_at: string;
   created_at: string;
+};
+
+export type ClassSessionRecord = {
+  id: string;
+  workspace_id: string;
+  schedule_id: string | null;
+  grade: number | null;
+  date: string;
+  started_at: string;
+  ended_at: string | null;
+  status: 'active' | 'paused' | 'completed';
+  current_block_index: number;
+  elapsed_seconds: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SessionAttendanceEventRecord = {
+  id: string;
+  workspace_id: string;
+  session_id: string;
+  student_id: string;
+  event_type: 'arrived' | 'left' | 'returned';
+  recorded_at: string;
+};
+
+export type SessionOutcomeRecord = {
+  id: string;
+  workspace_id: string;
+  session_id: string;
+  block_id: string;
+  delivered: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type ObservationRecord = BaseRecord & { student_id: string; note: string };

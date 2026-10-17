@@ -112,7 +112,7 @@ export default function StudentDetailsScreen() {
         </Section> : null}
 
         <AppText variant="subheading">What to revisit</AppText>
-        {weak.length ? weak.map(c => <View key={c.id} style={{gap:4}}><AppText>{title(c.concept_id)}: {Math.round(c.mastery*100)}% recorded evidence</AppText><AppText variant="small" muted>Model a concrete example, ask the student to explain it, then record a short check.</AppText><Button label="Teaching ideas" variant="quiet" onPress={()=>router.push({pathname:"/chatbot",params:{grade:String(student.grade),prompt:`Suggest a concrete teaching activity and three practice questions for ${title(c.concept_id)} in Grade ${student.grade} Maths.`}})}/></View>) : <AppText muted>No recorded weak concepts.</AppText>}
+        {weak.length ? weak.map(c => <View key={c.id} style={{gap:4}}><AppText>{title(c.concept_id)}: {Math.round(c.mastery*100)}% recorded evidence</AppText><AppText variant="small" muted>Model a concrete example, ask the student to explain it, then record a short check.</AppText><Button label="Teaching ideas" variant="quiet" onPress={()=>router.push({pathname:"/chatbot",params:{grade:String(student.grade),prompt:`Suggest a concrete teaching activity and three practice questions for ${title(c.concept_id)} in Grade ${student.grade} Maths.`,studentId:student.id,conceptId:c.concept_id,screenContext:"student_detail"}})}/></View>) : <AppText muted>No recorded weak concepts.</AppText>}
         <AppText variant="subheading">Assessment progress</AppText>
         {data?.concepts.filter(c => data.assessments.some(a => a.concept_id === c.id)).map(c => {
           const history = data.assessments.filter(a => a.concept_id === c.id);

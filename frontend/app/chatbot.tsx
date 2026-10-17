@@ -48,7 +48,7 @@ function Sources({json}:{json:string}) {
   </View>;
 }
 export default function ChatbotScreen({embedded=false}:{embedded?:boolean}={}) {
-  const params=useLocalSearchParams<{grade?:string;prompt?:string}>();
+  const params=useLocalSearchParams<{grade?:string;prompt?:string;studentId?:string;conceptId?:string;screenContext?:string}>();
   const {grade,setGrade,error:gradeError}=useGrade(Number(params.grade));
   const prompts=gradePrompts[grade];
   const contextualDraft=useRef("");
@@ -101,7 +101,12 @@ export default function ChatbotScreen({embedded=false}:{embedded?:boolean}={}) {
       if(!retryId) {drafts.current[id]="";if(active.current===id)setDraft("");}
       await refresh(id);
     };
-    try {if(retryId)await retryMessage(retryId,saved);else await sendMessage(id,text,selectedGrade,saved);}
+    const context = (params.studentId || params.conceptId || params.screenContext) ? {
+      student_id: params.studentId,
+      concept_id: params.conceptId,
+      screen_context: params.screenContext,
+    } : undefined;
+    try {if(retryId)await retryMessage(retryId,saved);else await sendMessage(id,text,selectedGrade,saved,undefined,context);}
     catch(e) {if(mounted.current)setError(e instanceof Error ? e.message : "Chat could not be saved.");}
     finally {
       operation.current=false;

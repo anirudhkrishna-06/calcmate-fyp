@@ -10,6 +10,7 @@ export function validateGeneralSelection(s:GeneralSelection){
   if(typeof s.date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(s.date)||!Number.isFinite(parsed.getTime())||parsed.toISOString().slice(0,10)!==s.date)throw new Error('Choose a valid planning date.');
 }
 const basics:Record<Grade,string>={1:'Counting and addition',2:'Place value and subtraction',3:'Multiplication and sharing',4:'Fractions and measurement'};
+const prerequisitesOf=(concept:{prerequisite_id:string|null; prerequisite_ids?:string[]})=>concept.prerequisite_ids?.length?concept.prerequisite_ids:(concept.prerequisite_id?[concept.prerequisite_id]:[]);
 
 /** Pure local rotation planner. Each sequential slot has one teacher assignment and a task for every grade. */
 export function buildGeneralSchedule(selection:GeneralSelection,evidence:PlanningPayload[]):GeneralDraft{
@@ -35,15 +36,15 @@ export function buildGeneralSchedule(selection:GeneralSelection,evidence:Plannin
     }).sort((a,b)=>b.score-a.score||a.c.id.localeCompare(b.c.id));
     let focus=ranked[0];
     const visited=new Set<string>();
-    while(focus?.c.prerequisite_id&&!visited.has(focus.c.id)){
+    while(focus&&prerequisitesOf(focus.c)[0]&&!visited.has(focus.c.id)){
       visited.add(focus.c.id);
-      const prerequisite=ranked.find(r=>r.c.id===focus.c.prerequisite_id&&r.weak>0);
+      const prerequisite=ranked.find(r=>prerequisitesOf(focus.c).includes(r.c.id)&&r.weak>0);
       if(!prerequisite)break;
       focus=prerequisite;
     }
     const concept=focus?.c.title??basics[grade];
     const weak=focus?.weak??0,missing=focus?.missing??attending.length;
-    const prerequisiteGap=!!focus&&allConcepts.some(c=>c.prerequisite_id===focus.c.id)&&weak>0;
+    const prerequisiteGap=!!focus&&allConcepts.some(c=>prerequisitesOf(c).includes(focus.c.id))&&weak>0;
     const pressure=attending.length?(weak+missing*0.35)/attending.length:0;
     const weight=1+pressure*(selection.priority==='learning-needs'?3:1)+(prerequisiteGap?0.6:0)+Math.min(attending.length,40)/100;
     const reason=students.length===0?'No students enrolled; use a short readiness check.':attending.length===0?'All recorded absent; check attendance before teaching.':weak?`${weak} of ${attending.length} students need revision${prerequisiteGap?'; prerequisite first':''}.`:missing?'Assessment gaps; begin with a readiness check.':'Recorded evidence supports guided practice.';
@@ -53,7 +54,7 @@ export function buildGeneralSchedule(selection:GeneralSelection,evidence:Plannin
   const ordered:GradeNeed[]=[];
   // Stable topological order puts a selected weak prerequisite before its dependent grade.
   while(pending.length){
-    const ready=pending.findIndex(n=>!pending.some(other=>other!==n&&other.weak>0&&other.conceptId&&allConcepts.some(c=>c.id===n.conceptId&&c.prerequisite_id===other.conceptId)));
+    const ready=pending.findIndex(n=>!pending.some(other=>other!==n&&other.weak>0&&other.conceptId&&allConcepts.some(c=>c.id===n.conceptId&&prerequisitesOf(c).includes(other.conceptId!))));
     ordered.push(pending.splice(ready<0?0:ready,1)[0]);
   }
   const common=selection.availableMinutes>=30?5:0;
@@ -77,7 +78,7 @@ export function buildGeneralSchedule(selection:GeneralSelection,evidence:Plannin
   const add=(kind:RotationBlock['kind'],minutes:number,teacher:GradeNeed|null,activity:string,reason:string)=>{
     const index=blocks.length;
     const practiceRound=blocks.filter(b=>b.kind==='instruction').length;
-    blocks.push({id:`block-${index+1}`,kind,durationMinutes:minutes,teacherGrade:teacher?.grade??null,teacherActivity:activity,reason,status:'planned',activities:needs.map(n=>({grade:n.grade,concept:n.concept,objective:n.objective,activity:kind==='opening'?'Join the number talk and collect materials.':kind==='closing'?'Share one solution and complete an exit question.':kind==='transition'?'Finish the current question and prepare the next task.':n.grade===teacher?.grade?`Work with the teacher on ${n.concept.toLowerCase()}.`:n.grade===1?`Practise ${n.concept.toLowerCase()} with counters or picture cards; show a partner three answers.`:practiceRound%2===0?`Pair practice in ${n.concept.toLowerCase()}: take turns solving four examples; compare methods and mark one question to ask.`:`Independent ${n.concept.toLowerCase()} worksheet: solve four examples, explain one answer, then try an extension question.`}))});
+    blocks.push({id:`block-${index+1}`,kind,durationMinutes:minutes,teacherGrade:teacher?.grade??null,teacherActivity:activity,reason,status:'planned',activities:needs.map(n=>({grade:n.grade,concept:n.concept,conceptId:n.conceptId,objective:n.objective,activity:kind==='opening'?'Join the number talk and collect materials.':kind==='closing'?'Share one solution and complete an exit question.':kind==='transition'?'Finish the current question and prepare the next task.':n.grade===teacher?.grade?`Work with the teacher on ${n.concept.toLowerCase()}.`:n.grade===1?`Practise ${n.concept.toLowerCase()} with counters or picture cards; show a partner three answers.`:practiceRound%2===0?`Pair practice in ${n.concept.toLowerCase()}: take turns solving four examples; compare methods and mark one question to ask.`:`Independent ${n.concept.toLowerCase()} worksheet: solve four examples, explain one answer, then try an extension question.`}))});
   };
   if(common)add('opening',3,null,'Lead a common number talk; set out tasks for each grade.','Prepare all grades for independent work.');
   chosen.forEach((n,i)=>{if(i)add('transition',1,null,'Check independent groups and switch the teacher group.','Allow time to move between grades.');add('instruction',durations[i],n,`${n.missing?'Check readiness, then':'Model one example, then'} guide practice in ${n.concept.toLowerCase()}.`,n.reason);});

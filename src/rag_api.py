@@ -180,8 +180,13 @@ def _run_copilot_pipeline(request: ChatRequest) -> ChatResponse:
                 subject=request.subject, k=request.k, model=model,
                 stream=False, use_llm=request.use_llm,
             )
-            if rag_answer.startswith("[generation failed:") or rag_answer.startswith("[--no-llm mode:"):
-                rag_answer = None
+            if rag_answer.startswith("[generation failed:"):
+                if raw_chunks and os.getenv("CALCMATE_RAG_ALLOW_RETRIEVAL_FALLBACK", "true").lower() in {"true", "1", "yes", "on"}:
+                    rag_answer = source_excerpt_answer(raw_chunks)
+                else:
+                    rag_answer = None
+            elif rag_answer.startswith("[--no-llm mode:"):
+                rag_answer = source_excerpt_answer(raw_chunks).replace("The local AI model is unavailable.", "Retrieval-only mode was requested.")
             rag_chunks = [
                 {"chunk_id": c.chunk_id, "text": c.text, "grade": c.grade,
                  "subject": c.subject, "source_pdf": c.source_pdf,
@@ -191,6 +196,13 @@ def _run_copilot_pipeline(request: ChatRequest) -> ChatResponse:
             ]
         except Exception:
             pass
+
+    if not rag_chunks and op_result.structured_data and "chunks" in op_result.structured_data:
+        rag_chunks = op_result.structured_data["chunks"]
+    if not rag_answer and rag_chunks:
+        from types import SimpleNamespace
+        dummy_chunks = [SimpleNamespace(**c) for c in rag_chunks]
+        rag_answer = source_excerpt_answer(dummy_chunks)
 
     if request.use_llm:
         copilot_response = compose_with_llm(

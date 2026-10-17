@@ -17,6 +17,7 @@ export default function PlannerScreen(){
   const {data,error,loading,reload}=useLocalData(loadPlanner);
   const plans=useMemo(()=>data?.plans.filter(plan=>plan.selection.grade===grade)??[],[data,grade]);
   return <Screen><AppText variant="title">Planner</AppText><FormStatus message={error||gradeError} error/>
+    <Section title="Curriculum Knowledge Graph" detail="Explore prerequisites & learning gap readiness"><Button label="View Prerequisite Graph" icon="git-network-outline" variant="secondary" onPress={()=>router.push({pathname:'/curriculum',params:{grade:String(grade),origin:'planner'}})}/></Section>
     <Section title="General schedule" detail="One teacher, multiple grades"><Button label="Create General Schedule" icon="calendar-outline" onPress={()=>router.push('/general-schedule/new')}/></Section>
     <Section title="Saved general schedules">
       {!loading&&!error&&!data?.general.length?<EmptyState title="No schedules yet" detail="Plan your classroom rotation."/>:null}

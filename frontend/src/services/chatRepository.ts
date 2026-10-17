@@ -2,6 +2,8 @@ import { assertScope, getDatabase, newId, Scope, withTransaction } from "./datab
 import { currentGrade } from "./gradePreference";
 import { requireSession } from "./authService";
 import { ChatMessage, ChatRequest, Conversation, RagResponse } from "@/types/chat";
+import { Grade } from "@/types/domain";
+import { buildCopilotRequest } from "./copilotService";
 const initialized=new Map<string,Promise<void>>();
 export async function chatScope():Promise<Scope> {
   const scope=await requireSession();
@@ -44,13 +46,26 @@ export async function conversationMessages(conversationId:string):Promise<ChatMe
   return withTransaction(async tx => tx.getAllAsync<ChatMessage>(
     "SELECT m.*,d.conversation_id,d.status,d.error,d.request_json,d.sources_json,d.reply_to FROM messages m JOIN message_details d ON d.workspace_id=m.workspace_id AND d.message_id=m.id WHERE m.workspace_id=? AND d.conversation_id=? ORDER BY m.created_at,m.rowid",scope.workspaceId,conversationId));
 }
-export async function prepareMessage(conversationId:string, question:string, grade:number):Promise<ChatMessage> {
-  const text=question.trim();
-  if (!text || text.length>2000) throw new Error("Enter a question of 1 to 2000 characters.");
-  if (![1,2,3,4].includes(grade)) throw new Error("Choose a grade from 1 to 4.");
-  const scope=await chatScope(); const id=newId(); const now=new Date().toISOString();
-  // Stage 3: include workspace_id so the backend copilot pipeline can query learner data.
-  const request:ChatRequest={question:text,grade:grade as ChatRequest["grade"],subject:"Math",use_llm:true,workspace_id:scope.workspaceId};
+export async function prepareMessage(
+  conversationId: string,
+  question: string,
+  grade: number,
+  context?: { student_id?: string; concept_id?: string; screen_context?: string }
+): Promise<ChatMessage> {
+  const text = question.trim();
+  if (!text || text.length > 2000) throw new Error("Enter a question of 1 to 2000 characters.");
+  if (![1, 2, 3, 4].includes(grade)) throw new Error("Choose a grade from 1 to 4.");
+  const scope = await chatScope();
+  const id = newId();
+  const now = new Date().toISOString();
+  // Stage 3 & Stage 1: attach structured copilot context (student_id, concept_id, screen_context)
+  const request: ChatRequest = buildCopilotRequest(text, {
+    grade: grade as Grade,
+    workspaceId: scope.workspaceId,
+    studentId: context?.student_id,
+    conceptId: context?.concept_id,
+    screenContext: context?.screen_context,
+  });
   await withTransaction(async tx => {
     const conversation=await tx.getFirstAsync<Conversation>("SELECT * FROM conversations WHERE workspace_id=? AND id=?",scope.workspaceId,conversationId);
     if (!conversation) throw new Error("Conversation not found.");

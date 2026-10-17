@@ -671,6 +671,36 @@ def op_generate_instructional_schedule(intent: IntentResult, request: CopilotReq
     )
 
 
+def op_general_question(intent: IntentResult, request: CopilotRequest) -> OperationResult:
+    """Retrieve NCERT textbook passages for a general question."""
+    params = intent.parameters
+    concept_phrase: str = params.get("concept_phrase", request.message[:80])
+    grade: int = int(params.get("grade", request.grade))
+    limitations: list[str] = []
+    lim = _rag_limitation(grade)
+    if lim:
+        limitations.append(lim)
+
+    chunks = _retrieve_for_concept(concept_phrase, grade, k=request.k or 3)
+    ncert = None
+    if chunks:
+        top = chunks[0]
+        ncert = {"source_pdf": top["source_pdf"], "grade": top["grade"],
+                 "text_snippet": top["text"][:350]}
+        evidence = f"Retrieved {len(chunks)} NCERT passage(s) for Grade {grade}."
+    else:
+        evidence = f"No direct NCERT passages found for Grade {grade}."
+
+    return OperationResult(
+        operation="general_question",
+        status=OperationStatus.OK if chunks else OperationStatus.PARTIAL,
+        structured_data={"concept_phrase": concept_phrase, "grade": grade, "chunks": chunks},
+        evidence_summary=evidence,
+        ncert_resource=ncert,
+        limitations=limitations,
+    )
+
+
 def op_unsupported(intent: IntentResult, request: CopilotRequest) -> OperationResult:
     return OperationResult(
         operation="unsupported",
@@ -694,6 +724,7 @@ _DISPATCH = {
     CopilotIntent.RETRIEVE_NCERT_RESOURCE:        op_retrieve_ncert_resource,
     CopilotIntent.EXPLAIN_CONCEPT:                op_explain_concept,
     CopilotIntent.GENERATE_INSTRUCTIONAL_SCHEDULE: op_generate_instructional_schedule,
+    CopilotIntent.GENERAL_QUESTION:               op_general_question,
     CopilotIntent.UNSUPPORTED:                    op_unsupported,
     CopilotIntent.AMBIGUOUS:                      op_unsupported,
 }

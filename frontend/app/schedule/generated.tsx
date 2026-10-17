@@ -21,7 +21,7 @@ export default function NewPlanScreen(){
   async function review(){setBusy(true);setError("");try{const value=await readPlanningPayload({grade,subject:"Math",date,availableMinutes:Number(minutes)});summarizePlanning(value);setPayload(value);}catch(e){setError(e instanceof Error?e.message:"Could not read class evidence.");}finally{setBusy(false);}}
   async function generate(){if(!payload)return;setBusy(true);setError("");try{const plan=await generateSchedule(payload);router.replace(`/schedule/${plan.id}`);}catch(e){setError(e instanceof Error?e.message:"Unable to save plan.");}finally{setBusy(false);}}
   const summary=payload?summarizePlanning(payload):null;
-  return <Screen topInset={false}><AppText variant="title">{payload?"Review learning needs":"Create lesson plan"}</AppText><LocalStatus text="Local mock planner | Works offline; not a live AI scheduling service"/>
+  return <Screen topInset={false}><AppText variant="title">{payload?"Review learning needs":"Create lesson plan"}</AppText><LocalStatus text="Local mock planner | Single-grade activities only. For multi-grade curriculum-aware scheduling, use General Schedule."/>
     <FormStatus message={error||gradeError} error/>
     {!payload ? <>
       <GradeSelector grade={grade} onSelect={setGrade} disabled={busy}/>

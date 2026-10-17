@@ -31,9 +31,16 @@ async function deliver(message:ChatMessage, onResponse?:(r:RagResponse)=>Promise
   catch(error) { await failMessage(message,error instanceof Error ? error.message : "The AI request failed."); }
   finally { sending.delete(message.id); }
 }
-export async function sendMessage(conversationId:string,question:string,grade:number,onSaved?:()=>Promise<void>,onResponse?:(r:RagResponse)=>Promise<void>) {
-  const message=await prepareMessage(conversationId,question,grade);
-  try { await onSaved?.(); } finally { await deliver(message,onResponse); }
+export async function sendMessage(
+  conversationId: string,
+  question: string,
+  grade: number,
+  onSaved?: () => Promise<void>,
+  onResponse?: (r: RagResponse) => Promise<void>,
+  context?: { student_id?: string; concept_id?: string; screen_context?: string }
+) {
+  const message = await prepareMessage(conversationId, question, grade, context);
+  try { await onSaved?.(); } finally { await deliver(message, onResponse); }
 }
 export async function retryMessage(messageId:string,onSaved?:()=>Promise<void>,onResponse?:(r:RagResponse)=>Promise<void>) {
   const message=await prepareRetry(messageId);

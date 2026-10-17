@@ -2,13 +2,6 @@ import { withTransaction, today } from "./database";
 
 export const demoScope = { workspaceId: "demo-workspace-v1", teacherId: "demo-teacher-v1" };
 
-export const conceptSeed = [
-  ["count", "Counting to 20", 1, null], ["add", "Addition within 20", 1, "count"],
-  ["place", "Place value", 2, "count"], ["subtract", "Subtraction with regrouping", 2, "place"],
-  ["multiply", "Multiplication facts", 3, "add"], ["divide", "Division as equal sharing", 3, "multiply"],
-  ["fractions", "Equivalent fractions", 4, "divide"], ["measure", "Perimeter and measurement", 4, "add"]
-] as const;
-
 export const canonicalConceptSeed = [
   // Grade 1 — 10 concepts
   ["M101", "Counting objects up to 20", 1, null],
@@ -77,6 +70,26 @@ export const canonicalConceptSeed = [
   ["M425", "Area using a grid", 4, "M413"],
 ] as const;
 
+export const conceptSeed = canonicalConceptSeed;
+
+// Canonical directed edges for the grades currently supported by the mobile
+// application. Tuple order is dependent, prerequisite.
+export const canonicalPrerequisiteSeed = [
+  ["M102", "M101"], ["M103", "M101"], ["M104", "M101"], ["M105", "M101"],
+  ["M204", "M104"], ["M205", "M105"], ["M201", "M103"], ["M202", "M201"],
+  ["M203", "M202"], ["M204", "M203"], ["M205", "M202"], ["M206", "M205"],
+  ["M207", "M201"], ["M302", "M301"], ["M303", "M302"], ["M304", "M303"],
+  ["M305", "M302"], ["M306", "M305"], ["M307", "M304"], ["M308", "M307"],
+  ["M310", "M309"], ["M312", "M311"], ["M315", "M314"], ["M316", "M309"],
+  ["M317", "M301"], ["M320", "M308"], ["M401", "M302"], ["M402", "M308"],
+  ["M403", "M308"], ["M404", "M403"], ["M405", "M308"], ["M407", "M406"],
+  ["M408", "M407"], ["M409", "M407"], ["M410", "M310"], ["M411", "M410"],
+  ["M412", "M312"], ["M413", "M412"], ["M425", "M413"], ["M414", "M315"],
+  ["M415", "M401"], ["M416", "M401"], ["M417", "M313"], ["M418", "M318"],
+  ["M420", "M316"], ["M421", "M319"]
+] as const;
+
+
 
 export const indianStudentNames = [
   "Aarav Sharma", "Diya Patel", "Vihaan Rao", "Ananya Singh", "Arjun Nair", "Ishita Das", "Kabir Khan", "Meera Iyer",
@@ -92,7 +105,10 @@ export function seedDemo() {
 async function seed() {
   await withTransaction(async tx => {
     const existing = await tx.getFirstAsync<{ seeded_at: string | null }>("SELECT seeded_at FROM workspaces WHERE id=?", demoScope.workspaceId);
-    if (existing?.seeded_at) return;
+    if (existing?.seeded_at) {
+      await repairCanonicalPrerequisites(tx, demoScope.workspaceId);
+      return;
+    }
     const w = demoScope.workspaceId;
     const now = new Date().toISOString();
     await tx.runAsync("INSERT OR IGNORE INTO workspaces(id,teacher_id,mode,created_at) VALUES(?,?,?,?)", w, demoScope.teacherId, "demo", now);
@@ -102,12 +118,8 @@ async function seed() {
       await tx.runAsync(
         "INSERT INTO concepts(id,workspace_id,title,grade,prerequisite_id,created_at,updated_at,learning_objective,coverage_status,is_active,subject_area) VALUES(?,?,?,?,?,?,?,NULL,'verified',1,'Math')",
         id, w, title, grade, prerequisite, now, now);
-      if (prerequisite) {
-        await tx.runAsync(
-          "INSERT OR IGNORE INTO concept_prerequisites(workspace_id,concept_id,prerequisite_id,relationship_type,confidence) VALUES(?,?,?,?,?)",
-          w, id, prerequisite, 'PREREQUISITE_OF', 'verified');
-      }
     }
+    await repairCanonicalPrerequisites(tx, w);
     for (let i = 0; i < indianStudentNames.length; i++) {
       const grade = Math.floor(i / 8) + 1;
       const id = `demo-student-${i + 1}`;
@@ -139,4 +151,19 @@ async function seed() {
     }
     await tx.runAsync("UPDATE workspaces SET seeded_at=? WHERE id=?", now, w);
   });
+}
+
+export async function repairCanonicalPrerequisites(tx: any, workspaceId: string) {
+  const ids = canonicalConceptSeed.map(([id]) => id);
+  const placeholders = ids.map(() => "?").join(",");
+  await tx.runAsync(
+    `DELETE FROM concept_prerequisites WHERE workspace_id=? AND concept_id IN (${placeholders}) AND prerequisite_id IN (${placeholders})`,
+    workspaceId, ...ids, ...ids
+  );
+  for (const [conceptId, prerequisiteId] of canonicalPrerequisiteSeed) {
+    await tx.runAsync(
+      "INSERT OR IGNORE INTO concept_prerequisites(workspace_id,concept_id,prerequisite_id,relationship_type,confidence) VALUES(?,?,?,?,?)",
+      workspaceId, conceptId, prerequisiteId, "PREREQUISITE_OF", "verified"
+    );
+  }
 }

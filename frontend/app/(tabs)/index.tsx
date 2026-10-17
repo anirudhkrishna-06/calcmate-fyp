@@ -31,6 +31,7 @@ export default function HomeScreen(){
     {loading&&!data ? <AppText muted>Opening classroom...</AppText> : null}
     {data ? <>
       {data.mode==="demo" ? <LocalStatus text="Demo"/> : null}
+      {data.activeSession ? <Section title="Class in progress" detail={`Active session · ${data.activeSession.status}`}><Button label="Resume active class" icon="play-circle-outline" onPress={()=>router.push({pathname:"/active-session",params:{sessionId:data.activeSession!.id,scheduleId:data.activeSession!.schedule_id??""}})}/></Section> : null}
       {data.rotation?<Section title={data.rotation.selection.date===today()?"Today's schedule":"Next classroom schedule"}><ActionRow title={`${data.rotation.selection.availableMinutes} min · Grades ${data.rotation.selection.grades.join(', ')}`} detail={data.rotation.selection.date} onPress={()=>router.push(`/general-schedule/${data.rotation!.id}`)}/></Section>:null}
       <Section title="Today's teaching" detail={`Grade ${grade} | ${data.students} enrolled`}>
         <AppText style={{color:colors.forest}}>{!data.students ? "Add students to begin your register." : data.recorded===data.students ? `Attendance complete | ${data.present} present` : `${data.recorded} of ${data.students} attendance entries saved`}</AppText>
@@ -38,8 +39,9 @@ export default function HomeScreen(){
           <Button label="Mark attendance" icon="checkbox-outline" onPress={()=>openClassroom("attendance")} style={{flexGrow:1}}/>
           <Button label="Record marks" icon="create-outline" variant="secondary" onPress={()=>openClassroom("assessments")} style={{flexGrow:1}}/>
         </View>
-        <ActionRow title="Create schedule" detail="Rotate between your grades" onPress={()=>router.push('/general-schedule/new')}/>
-        <ActionRow title="Create lesson plan" onPress={()=>router.push({pathname:"/schedule/generated",params:{grade:String(grade)}})}/>
+        <ActionRow title="Create multi-grade schedule" detail="Multi-grade rotation (Primary research engine)" onPress={()=>router.push('/general-schedule/new')}/>
+        <ActionRow title={`Create single-grade lesson plan (Grade ${grade})`} detail="Single-grade lesson activities (Local mock planner)" onPress={()=>router.push({pathname:"/schedule/generated",params:{grade:String(grade)}})}/>
+        <ActionRow title="Explore Knowledge Graph" detail={`Inspect NCERT prerequisite structure for Grade ${grade}`} onPress={()=>router.push({pathname:"/curriculum",params:{grade:String(grade),origin:"home"}})}/>
         <ActionRow title="Ask Assistant" detail={`Maths teaching support for Grade ${grade}`} onPress={()=>router.push({pathname:"/chatbot",params:{grade:String(grade)}})}/>
       </Section>
       <Section title="Students needing help" detail={`${data.revision} need revision`}>

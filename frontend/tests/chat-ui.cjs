@@ -3,7 +3,7 @@ const fs=require('node:fs');const path=require('node:path');const Module=require
 const React=require('react');const {create,act}=require('react-test-renderer');
 global.IS_REACT_ACT_ENVIRONMENT=true;
 const params={};
-let scrolled=0,focused=0,keyboardShow,networkListener,release,sendCount=0,retryCount=0;
+let scrolled=0,focused=0,keyboardShow,networkListener,release,sendCount=0,retryCount=0,lastContext=null;
 const conversations=[{id:'c1',title:'New chat',grade:4,updated_at:'2026-10-10'}];
 const messages={c1:[]};let selected='c1';
 const service={
@@ -12,7 +12,8 @@ const service={
   async conversationMessages(id){return [...messages[id]];},
   async selectConversation(id){selected=id;},
   async createConversation(grade){const c={id:'c2',title:'New chat',grade,updated_at:'2026-10-10'};conversations.push(c);messages.c2=[];return c;},
-  async sendMessage(id,text,grade,onSaved){
+  async sendMessage(id,text,grade,onSaved,onResponse,context){
+    lastContext=context;
     sendCount++;messages[id].push({id:'m1',role:'teacher',text,status:'pending',sources_json:'[]'});await onSaved();
     await new Promise(resolve=>{release=resolve;});messages[id][0].status='failed';messages[id][0].error='Network unavailable';
   },
@@ -81,7 +82,17 @@ async function run(){
   assert.equal(renderer.root.findByProps({testID:'chat-composer'}).props.value,params.prompt);
   assert.equal(renderer.root.findAllByType('Pressable').some(p=>p.props.accessibilityLabel==='Back'),false);
   assert.equal(sendCount,1); // Context drafts never send without teacher action.
+  await act(async()=>{renderer.unmount();});
+  // Increment 2: verify context object is forwarded when studentId/conceptId params are present
+  params.prompt=undefined;params.studentId='test-student-1';params.conceptId='M408';params.screenContext='student_detail';
+  sendCount=0;lastContext=null;
+  await act(async()=>{renderer=create(React.createElement(Chat));});
+  await act(async()=>{renderer.root.findByProps({testID:'chat-composer'}).props.onChangeText('How is this student doing?');});
+  await act(async()=>{renderer.root.findByProps({testID:'chat-send'}).props.onPress();});
+  assert.equal(lastContext?.student_id,'test-student-1','context.student_id must be forwarded');
+  assert.equal(lastContext?.concept_id,'M408','context.concept_id must be forwarded');
+  assert.equal(lastContext?.screen_context,'student_detail','context.screen_context must be forwarded');
   await act(async()=>{renderer.unmount();});Module._load=originalLoad;
-  console.log('PASS: chat UI composer/keyboard structure, prompt focus, pending state, duplicate guard, retry, source rendering, explicit context drafts and embedded tab, new chat, history switching and offline banner. Native keyboard pixels require device QA.');
+  console.log('PASS: chat UI composer/keyboard structure, prompt focus, pending state, duplicate guard, retry, source rendering, explicit context drafts and embedded tab, new chat, history switching and offline banner, structured copilot context forwarding. Native keyboard pixels require device QA.');
 }
 run().catch(error=>{Module._load=originalLoad;console.error(error);process.exitCode=1;});

@@ -1,5 +1,5 @@
 import { Scope,assertScope,withTransaction } from "./database";
-import { conceptSeed,indianStudentNames } from "./demoService";
+import { conceptSeed,canonicalPrerequisiteSeed,indianStudentNames,repairCanonicalPrerequisites } from "./demoService";
 import { Teacher } from "@/types/domain";
 export async function initializeTeacherWorkspace(scope:Scope,profile:Teacher,presentationRoster=false) {
   const now=new Date().toISOString();
@@ -12,12 +12,12 @@ export async function initializeTeacherWorkspace(scope:Scope,profile:Teacher,pre
         "INSERT OR IGNORE INTO concepts(id,workspace_id,title,grade,prerequisite_id,created_at,updated_at,learning_objective,coverage_status,is_active,subject_area) VALUES(?,?,?,?,?,?,?,NULL,'verified',1,'Math')",
         id, scope.workspaceId, title, grade, prerequisite, now, now);
     // Seed prerequisite edges into concept_prerequisites junction table
-    for (const [id, , , prerequisite] of conceptSeed) {
-      if (!prerequisite) continue;
+    for (const [id, prerequisite] of canonicalPrerequisiteSeed) {
       await tx.runAsync(
         "INSERT OR IGNORE INTO concept_prerequisites(workspace_id,concept_id,prerequisite_id,relationship_type,confidence) VALUES(?,?,?,?,?)",
         scope.workspaceId, id, prerequisite, 'PREREQUISITE_OF', 'verified');
     }
+    await repairCanonicalPrerequisites(tx, scope.workspaceId);
     if(!presentationRoster)return;
     const marker=`presentation-roster-v1:${scope.workspaceId}`;
     if(await tx.getFirstAsync("SELECT key FROM app_meta WHERE key=?",marker))return;
