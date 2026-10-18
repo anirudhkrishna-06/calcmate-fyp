@@ -79,6 +79,8 @@ def compose_deterministic(
         answer = "This information is not currently accessible."
         if operation_result.evidence_summary:
             answer += f"\n\n{operation_result.evidence_summary}"
+        if operation_result.recommended_next_step:
+            answer += f"\n\n✅ **Next step:** {operation_result.recommended_next_step}"
         return CopilotResponse(
             answer=answer,
             limitations=operation_result.limitations,

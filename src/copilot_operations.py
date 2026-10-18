@@ -40,7 +40,9 @@ RAG_GRADES_INDEXED = {3, 4, 5}
 def _find_db() -> Optional[str]:
     for p in _DB_SEARCH_PATHS:
         if p and p.is_file():
+            print(f"[CALCMATE_TRACE] classroom_db_found path={str(p)!r}", flush=True)
             return str(p)
+    print("[CALCMATE_TRACE] classroom_db_missing", flush=True)
     return None
 
 
@@ -57,6 +59,11 @@ def _retrieve_for_concept(concept_phrase: str, grade: int, k: int = 3) -> list[d
         from src.copilot import get_default_retriever
         retriever = get_default_retriever()
         chunks = retriever.retrieve(concept_phrase, grade=min(grade, 5), subject="Math", k=k)
+        print(
+            "[CALCMATE_TRACE] operation_retrieval "
+            f"phrase={concept_phrase[:80]!r} grade={grade!r} chunks={len(chunks)!r}",
+            flush=True,
+        )
         return [
             {
                 "chunk_id": c.chunk_id, "text": c.text[:400], "grade": c.grade,
@@ -66,7 +73,8 @@ def _retrieve_for_concept(concept_phrase: str, grade: int, k: int = 3) -> list[d
             }
             for c in chunks
         ]
-    except Exception:
+    except Exception as exc:
+        print(f"[CALCMATE_TRACE] operation_retrieval_error error_type={type(exc).__name__!r}", flush=True)
         return []
 
 
@@ -416,12 +424,18 @@ def op_classroom_learning_summary(intent: IntentResult, request: CopilotRequest)
             operation="classroom_learning_summary",
             status=OperationStatus.UNAVAILABLE,
             limitations=["Classroom database not accessible."],
+            recommended_next_step="Reconnect the classroom workspace or record learner evidence on the classroom device before asking for attention priorities.",
         )
 
     try:
         import sqlite3
+        import datetime
         with sqlite3.connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
+            students = conn.execute(
+                "SELECT id, name FROM students WHERE workspace_id=? AND grade=? ORDER BY name",
+                (workspace_id, grade),
+            ).fetchall()
             concepts = conn.execute(
                 "SELECT id, title FROM concepts WHERE workspace_id=? AND grade=? ORDER BY id",
                 (workspace_id, grade),
@@ -439,6 +453,70 @@ def op_classroom_learning_summary(intent: IntentResult, request: CopilotRequest)
             s = li.get_group_concept_summary(workspace_id, grade, c["id"], db_path)
             summaries.append({**s, "concept_title": c["title"]})
 
+        # Rank attention deterministically from stored learner-state evidence.
+        # Unknown evidence is reported separately and never treated as failure.
+        attention_candidates = []
+        for student in students:
+            view = li.get_student_knowledge_view(workspace_id, student["id"], db_path)
+            support = [
+                c["concept_title"] for c in view["concepts"]
+                if (c.get("state") or {}).get("state_status") == "needs_support"
+            ]
+            concept_by_id = {c["concept_id"]: c for c in view["concepts"]}
+            prerequisite_support = []
+            prerequisite_unknown = []
+            for concept in view["concepts"]:
+                if not concept.get("prerequisite_gap"):
+                    continue
+                prerequisite_states = [
+                    (concept_by_id.get(pid) or {}).get("state") or {}
+                    for pid in concept.get("prerequisite_ids", [])
+                ]
+                if any(state.get("state_status") == "needs_support" for state in prerequisite_states):
+                    prerequisite_support.append(concept["concept_title"])
+                else:
+                    prerequisite_unknown.append(concept["concept_title"])
+            insufficient_count = sum(
+                1 for c in view["concepts"]
+                if (c.get("state") or {}).get("state_status") in ("unknown", "insufficient")
+            ) + len(prerequisite_unknown)
+            priority = len(support) * 3 + len(prerequisite_support) * 2
+            if not support and not prerequisite_support and insufficient_count:
+                priority = 1
+            if priority:
+                reasons = []
+                if support:
+                    reasons.append(f"needs support on {', '.join(support[:2])}")
+                if prerequisite_support:
+                    reasons.append(f"prerequisite gap for {', '.join(prerequisite_support[:2])}")
+                if prerequisite_unknown:
+                    reasons.append(f"prerequisite evidence missing for {', '.join(prerequisite_unknown[:2])}")
+                if insufficient_count and not support and not prerequisite_support:
+                    reasons.append(f"{insufficient_count} concept(s) have insufficient evidence")
+                attention_candidates.append({
+                    "student_id": student["id"],
+                    "student_name": student["name"],
+                    "priority": priority,
+                    "reason": "; ".join(reasons),
+                    "evidence_status": "supported" if support or prerequisite_support else "unknown",
+                })
+        attention_candidates.sort(key=lambda item: (-item["priority"], item["student_name"]))
+
+        attendance = []
+        try:
+            today = datetime.date.today().isoformat()
+            with sqlite3.connect(db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                attendance = [dict(row) for row in conn.execute(
+                    """SELECT s.name AS student_name, a.status FROM attendance a
+                       JOIN students s ON s.id=a.student_id AND s.workspace_id=a.workspace_id
+                       WHERE a.workspace_id=? AND s.grade=? AND a.date=? ORDER BY s.name""",
+                    (workspace_id, grade, today),
+                ).fetchall()]
+        except sqlite3.OperationalError:
+            # Older classroom databases may not yet contain attendance.
+            attendance = []
+
         total_students = summaries[0]["total_students"] if summaries else 0
         needs_support_concepts = [
             s["concept_title"] for s in summaries
@@ -447,16 +525,52 @@ def op_classroom_learning_summary(intent: IntentResult, request: CopilotRequest)
 
         evidence = (
             f"Grade {grade} classroom summary: {total_students} student(s), "
-            f"{len(concepts)} concept(s) assessed. "
+            f"{len(concepts)} concept(s) in scope. "
             f"{len(needs_support_concepts)} concept(s) have students needing support."
         )
+        if attention_candidates:
+            supported = [item for item in attention_candidates if item["evidence_status"] == "supported"]
+            unknown = [item for item in attention_candidates if item["evidence_status"] == "unknown"]
+            if supported:
+                listed = ", ".join(
+                    f"{item['student_name']} ({item['reason']})"
+                    for item in supported[:5]
+                )
+                evidence += f" Confirmed learning needs: {listed}."
+            if unknown:
+                listed_unknown = ", ".join(
+                    f"{item['student_name']} ({item['reason']})"
+                    for item in unknown[:5]
+                )
+                evidence += f" Insufficient evidence requiring a check: {listed_unknown}."
+        elif students:
+            evidence += " No demonstrated learning difficulty was found in the recorded learner states."
+        elif not students:
+            evidence += " No students are enrolled; there is insufficient evidence to rank attention needs."
+        if attendance:
+            attendance_counts = {
+                status: sum(1 for row in attendance if row["status"] == status)
+                for status in ("present", "late", "absent")
+            }
+            evidence += (
+                f" Attendance recorded today: {attendance_counts['present']} present, "
+                f"{attendance_counts['late']} late, {attendance_counts['absent']} absent."
+            )
+        elif students:
+            evidence += " Today's attendance is not recorded for this group."
+
         rec = (f"Focus on: {', '.join(needs_support_concepts[:3])}."
-               if needs_support_concepts else "All assessed concepts show adequate group progress.")
+               if needs_support_concepts else "Begin with a short readiness check for concepts with missing evidence.")
 
         return OperationResult(
             operation="classroom_learning_summary",
             status=OperationStatus.OK,
-            structured_data={"grade": grade, "concept_summaries": summaries},
+            structured_data={
+                "grade": grade,
+                "concept_summaries": summaries,
+                "attention_candidates": attention_candidates,
+                "attendance": attendance,
+            },
             evidence_summary=evidence,
             recommended_next_step=rec,
         )
@@ -734,6 +848,8 @@ def dispatch(intent_result: IntentResult, request: CopilotRequest) -> OperationR
     """Route an IntentResult to the correct operation function."""
     fn = _DISPATCH.get(intent_result.intent)
     if fn is None:
+        print(f"[CALCMATE_TRACE] dispatch_missing intent={intent_result.intent.value!r}", flush=True)
         return op_unsupported(intent_result, request)
+    print(f"[CALCMATE_TRACE] dispatch operation={fn.__name__!r}", flush=True)
     return fn(intent_result, request)
 

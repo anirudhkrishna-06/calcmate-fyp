@@ -61,6 +61,8 @@ class ChatResponse(BaseModel):
     recommended_next_step: Optional[str] = None
     ncert_resource: Optional[dict] = None
     limitations: list[str] = Field(default_factory=list)
+    # Structured operation payload, used by the on-device scheduler bridge.
+    structured_data: Optional[dict] = None
 
 
 class HealthResponse(BaseModel):
@@ -84,6 +86,14 @@ app.add_middleware(CORSMiddleware, allow_origins=origins,
                    allow_headers=["Content-Type", "Authorization"])
 _lock = Lock()
 _rag_loaded = False
+
+
+def _trace(event: str, **fields) -> None:
+    """Emit compact request-routing diagnostics to the backend terminal."""
+    details = " ".join(f"{key}={value!r}" for key, value in fields.items())
+    # Use flushed stdout so traces remain visible even when Uvicorn is started
+    # with log_level="error" (for example, by the integration test runner).
+    print(f"[CALCMATE_TRACE] {event}{f' {details}' if details else ''}", flush=True)
 
 
 def generation_status():
@@ -132,7 +142,18 @@ def _is_copilot_request(request: ChatRequest) -> bool:
     structured context field. Plain RAG questions (workspace_id=None) pass
     through the original pipeline unchanged.
     """
-    return bool(request.workspace_id or request.student_id or request.concept_id)
+    selected = bool(request.workspace_id or request.student_id or request.concept_id)
+    _trace(
+        "route_check",
+        copilot=selected,
+        workspace=bool(request.workspace_id),
+        student=bool(request.student_id),
+        concept=bool(request.concept_id),
+        screen=bool(request.screen_context),
+        grade=request.grade,
+        question_length=len(request.question),
+    )
+    return selected
 
 
 def _run_copilot_pipeline(request: ChatRequest) -> ChatResponse:
@@ -161,8 +182,30 @@ def _run_copilot_pipeline(request: ChatRequest) -> ChatResponse:
         screen_context=request.screen_context,
     )
 
+    _trace(
+        "copilot_request",
+        workspace=bool(copilot_req.workspace_id),
+        student=bool(copilot_req.student_id),
+        concept=bool(copilot_req.concept_id),
+        screen=copilot_req.screen_context or "none",
+    )
+
     intent_result = extract_intent(copilot_req)
+    _trace(
+        "intent_extracted",
+        intent=intent_result.intent.value,
+        method=intent_result.extraction_method,
+        confidence=round(intent_result.confidence, 3),
+        missing=intent_result.missing_parameters,
+        parameter_keys=sorted(intent_result.parameters.keys()),
+    )
     op_result = dispatch(intent_result, copilot_req)
+    _trace(
+        "operation_complete",
+        operation=op_result.operation,
+        status=op_result.status.value,
+        has_structured_data=bool(op_result.structured_data),
+    )
 
     # For retrieval-heavy intents, also run RAG for enrichment
     rag_answer: Optional[str] = None
@@ -172,6 +215,7 @@ def _run_copilot_pipeline(request: ChatRequest) -> ChatResponse:
                    CopilotIntent.EXPLAIN_PREREQUISITES, CopilotIntent.EXPLAIN_LEARNING_DIFFICULTY}
 
     if intent_result.intent in rag_intents:
+        _trace("rag_enrichment_start", intent=intent_result.intent.value)
         try:
             copilot_mod, retriever = _get_runtime()
             model = os.getenv("CALCMATE_RAG_MODEL", copilot_mod.DEFAULT_MODEL)
@@ -194,8 +238,14 @@ def _run_copilot_pipeline(request: ChatRequest) -> ChatResponse:
                  "used_fallback": c.used_fallback}
                 for c in raw_chunks
             ]
-        except Exception:
-            pass
+            _trace(
+                "rag_enrichment_complete",
+                answer=bool(rag_answer),
+                chunks=len(rag_chunks),
+                fallback=bool(rag_answer and "retrieval only" in rag_answer.lower()),
+            )
+        except Exception as exc:
+            _trace("rag_enrichment_error", error_type=type(exc).__name__)
 
     if not rag_chunks and op_result.structured_data and "chunks" in op_result.structured_data:
         rag_chunks = op_result.structured_data["chunks"]
@@ -215,6 +265,15 @@ def _run_copilot_pipeline(request: ChatRequest) -> ChatResponse:
             op_result, intent_result, copilot_req,
             rag_answer=rag_answer, rag_chunks=rag_chunks,
         )
+
+    _trace(
+        "copilot_response",
+        intent=copilot_response.intent,
+        answer_length=len(copilot_response.answer),
+        chunks=len(copilot_response.chunks),
+        used_llm=copilot_response.used_llm,
+        limitations=len(copilot_response.limitations),
+    )
 
     # Build backward-compatible ChunkResponse list
     chunk_responses = []
@@ -237,6 +296,7 @@ def _run_copilot_pipeline(request: ChatRequest) -> ChatResponse:
         recommended_next_step=copilot_response.recommended_next_step,
         ncert_resource=copilot_response.ncert_resource,
         limitations=copilot_response.limitations,
+        structured_data=op_result.structured_data,
     )
 
 
@@ -258,6 +318,7 @@ def health() -> HealthResponse:
 
 @app.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest) -> ChatResponse:
+    _trace("chat_received", subject=request.subject, grade=request.grade, use_llm=request.use_llm)
     # Stage 3: Route structured copilot requests through the intent pipeline.
     if _is_copilot_request(request):
         with _lock:
@@ -269,6 +330,7 @@ def chat(request: ChatRequest) -> ChatResponse:
                                     detail="Copilot pipeline unavailable. Check Python dependencies.") from exc
 
     # Original RAG path (unchanged for backward compatibility).
+    _trace("plain_rag_path", reason="no structured copilot context")
     with _lock:
         try:
             copilot, retriever = _get_runtime()
@@ -292,6 +354,7 @@ def chat(request: ChatRequest) -> ChatResponse:
         mode = "retrieval-only"
     else:
         mode = "generated"
+    _trace("plain_rag_complete", mode=mode, chunks=len(chunks), answer_length=len(answer))
     return ChatResponse(answer=answer, mode=mode, chunks=[ChunkResponse(
         chunk_id=c.chunk_id, text=c.text, grade=c.grade, subject=c.subject,
         source_pdf=c.source_pdf, chunk_index=c.chunk_index, score=c.score,

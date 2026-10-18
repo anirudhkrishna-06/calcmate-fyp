@@ -9,6 +9,7 @@ Tests for Stage 3 Copilot Pipeline:
 import os
 import sqlite3
 import tempfile
+import datetime
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -150,6 +151,28 @@ class CopilotPipelineTests(unittest.TestCase):
         result = extract_intent(req)
         self.assertEqual(result.intent, CopilotIntent.CLASSROOM_LEARNING_SUMMARY)
 
+    def test_intent_attention_queries_use_classroom_summary(self):
+        for question in (
+            "Who needs more attention today?",
+            "Which students need attention?",
+            "Where is the majority of my students weak?",
+            "How are my students right now?",
+            "  WHICH   LEARNERS ARE STRUGGLING?!  ",
+            "Show me the students who need support.",
+            "Who should I check on today?",
+        ):
+            with self.subTest(question=question):
+                result = extract_intent(CopilotRequest(message=question, grade=2))
+                self.assertEqual(result.intent, CopilotIntent.CLASSROOM_LEARNING_SUMMARY)
+
+    def test_concept_specific_support_query_keeps_student_concept_route(self):
+        result = extract_intent(CopilotRequest(message="Who needs help on place value?", grade=2))
+        self.assertEqual(result.intent, CopilotIntent.FIND_STUDENTS_BY_CONCEPT)
+
+    def test_intent_teach_next_uses_deterministic_scheduler(self):
+        result = extract_intent(CopilotRequest(message="What should I teach next?", grade=2))
+        self.assertEqual(result.intent, CopilotIntent.GENERATE_INSTRUCTIONAL_SCHEDULE)
+
     def test_intent_group_readiness(self):
         req = CopilotRequest(message="Is the group ready for addition without regrouping?", grade=2)
         result = extract_intent(req)
@@ -231,6 +254,102 @@ class CopilotPipelineTests(unittest.TestCase):
         self.assertEqual(op_res.structured_data.get("action"), "invoke_local_scheduler")
         self.assertIn(2, op_res.structured_data.get("suggested_grades", []))
         self.assertIn("Schedule request", op_res.evidence_summary)
+
+    def test_attention_endpoint_uses_learner_evidence_not_rag(self):
+        with patch("src.copilot_operations._find_db", return_value=str(self.db_path)), \
+             patch("src.rag_api._get_runtime") as rag_runtime:
+            resp = self.client.post("/chat", json={
+                "question": "Who needs more attention today?",
+                "grade": 2,
+                "workspace_id": "w1",
+                "use_llm": False,
+            })
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertEqual(data["intent"], "classroom_learning_summary")
+            self.assertEqual(data["chunks"], [])
+            self.assertIn("Aarav Sharma", data["answer"])
+            self.assertIn("needs support", data["answer"])
+            self.assertIn("Insufficient evidence requiring a check", data["answer"])
+            self.assertIn("Diya Patel", data["answer"])
+            rag_runtime.assert_not_called()
+
+    def test_summary_reports_recorded_attendance_without_inferencing_mastery(self):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""CREATE TABLE attendance (
+                id TEXT PRIMARY KEY, workspace_id TEXT, student_id TEXT,
+                date TEXT, status TEXT
+            )""")
+            conn.execute(
+                "INSERT INTO attendance VALUES(?,?,?,?,?)",
+                ("a1", "w1", "s1", datetime.date.today().isoformat(), "absent"),
+            )
+        with patch("src.copilot_operations._find_db", return_value=str(self.db_path)):
+            req = CopilotRequest(message="Who needs attention?", grade=2, workspace_id="w1", use_llm=False)
+            intent = IntentResult(intent=CopilotIntent.CLASSROOM_LEARNING_SUMMARY, parameters={"grade": 2})
+            result = op_classroom_learning_summary(intent, req)
+            self.assertEqual(result.status, OperationStatus.OK)
+            self.assertIn("Attendance recorded today: 0 present, 0 late, 1 absent", result.evidence_summary)
+            self.assertNotIn("absent", result.structured_data["attention_candidates"][0]["reason"])
+
+    def test_summary_does_not_mutate_learner_state(self):
+        with patch("src.copilot_operations._find_db", return_value=str(self.db_path)):
+            before = sqlite3.connect(self.db_path).execute(
+                "SELECT student_id, concept_id, state_status, mastery_estimate FROM learner_concept_states ORDER BY id"
+            ).fetchall()
+            req = CopilotRequest(message="How are my students doing?", grade=2, workspace_id="w1", use_llm=False)
+            intent = IntentResult(intent=CopilotIntent.CLASSROOM_LEARNING_SUMMARY, parameters={"grade": 2})
+            result = op_classroom_learning_summary(intent, req)
+            after = sqlite3.connect(self.db_path).execute(
+                "SELECT student_id, concept_id, state_status, mastery_estimate FROM learner_concept_states ORDER BY id"
+            ).fetchall()
+            self.assertEqual(result.status, OperationStatus.OK)
+            self.assertEqual(before, after)
+
+    def test_scheduler_action_is_exposed_to_frontend_contract(self):
+        with patch("src.copilot_operations._find_db", return_value=str(self.db_path)), \
+             patch("src.rag_api._get_runtime") as rag_runtime:
+            resp = self.client.post("/chat", json={
+                "question": "What should I teach next?",
+                "grade": 2,
+                "workspace_id": "w1",
+                "use_llm": False,
+            })
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(resp.json()["intent"], "generate_instructional_schedule")
+            self.assertEqual(resp.json()["structured_data"]["action"], "invoke_local_scheduler")
+            rag_runtime.assert_not_called()
+
+    def test_curriculum_activity_keeps_rag_sources(self):
+        from types import SimpleNamespace
+        chunk = SimpleNamespace(
+            chunk_id=11, text="NCERT activity for angles", grade=4, subject="Math",
+            source_pdf="math4.pdf", chunk_index=2, score=0.88, used_fallback=False,
+        )
+        with patch("src.copilot_operations._find_db", return_value=str(self.db_path)), \
+             patch("src.copilot_operations._retrieve_for_concept", return_value=[{
+                 "chunk_id": 11, "text": chunk.text, "grade": 4, "subject": "Math",
+                 "source_pdf": chunk.source_pdf, "chunk_index": 2, "score": 0.88,
+                 "used_fallback": False,
+             }]), \
+             patch("src.rag_api._get_runtime") as rag_runtime:
+            rag_runtime.return_value = (
+                SimpleNamespace(
+                    DEFAULT_MODEL="test-model",
+                    answer_question=lambda *args, **kwargs: ("NCERT activity answer", [chunk]),
+                ),
+                "mock-retriever",
+            )
+            resp = self.client.post("/chat", json={
+                "question": "Give me an NCERT activity for teaching angles in Grade 4.",
+                "grade": 4,
+                "workspace_id": "w1",
+                "use_llm": False,
+            })
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(resp.json()["intent"], "recommend_curriculum_activity")
+            self.assertEqual(resp.json()["chunks"][0]["source_pdf"], "math4.pdf")
+            rag_runtime.assert_called_once()
 
     # ── 3. Response Composer Tests ───────────────────────────────────────────
 

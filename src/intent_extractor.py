@@ -102,6 +102,22 @@ _STUDENT_PATTERNS = [
     r"\blist\s+students?\b",
     r"\bshow\s+(me\s+)?students?\b",
     r"\bstudents?\s+in\s+(grade|class)\b",
+    r"\bwho\s+needs?\s+(help|support|revision)\b",
+]
+
+_ATTENTION_PATTERNS = [
+    r"\bwho\s+needs?\s+(more\s+)?attention\b",
+    r"\bwhich\s+students?\s+need\s+(more\s+)?attention\s*[?!]*$",
+    r"\bstudents?\s+who\s+need\s+(more\s+)?attention\s*[?!]*$",
+    r"\bwho\s+needs?\s+help\s*[?!]*$",
+    r"\bwhich\s+(students?|learners?)\s+are\s+struggling\s*[?!]*$",
+    r"\bwhat\s+are\s+my\s+students?\s+struggling\s+with\s*[?!]*$",
+    r"\bshow\s+me\s+(the\s+)?students?\s+who\s+need\s+support\s*[?!]*$",
+    r"\bwhich\s+concepts?\s+are\s+my\s+students?\s+weak\s+in\s*[?!]*$",
+    r"\bwho\s+should\s+i\s+check\s+on\s+today\s*[?!]*$",
+    r"\bwhere\s+(is|are)\s+(my|the|most|a\s+majority\s+of\s+the)\s+students?.*\bweak\b",
+    r"\b(my|the)\s+(majority\s+of\s+the\s+)?students?.*\bweak\b",
+    r"\bhow\s+are\s+my\s+students?\b",
 ]
 
 _STUDENT_STATE_PATTERNS = [
@@ -129,6 +145,7 @@ _DIFFICULTY_PATTERNS = [
 
 _ACTIVITY_PATTERNS = [
     r"\b(suggest|recommend|give|provide)\s+(an?\s+)?(activity|activities|exercise|exercises|task|tasks|lesson)\b",
+    r"\b(suggest|recommend|give|provide)\b.*\b(activity|activities|exercise|exercises|task|tasks|lesson)\b",
     r"\bwhat\s+(activity|activities|exercise[s]?)\b",
     r"\bhow\s+(can|do)\s+(i|we)\s+teach\b",
     r"\bteaching\s+(idea|ideas|suggestion|approach)\b",
@@ -152,6 +169,8 @@ _SCHEDULE_PATTERNS = [
     r"\ballocat(e|ion)\s+(teacher|my|instruction)\s+attention\b",
     r"\bteacher\s+attention\b",
     r"\bmultigrade\s+schedule\b",
+    r"\bwhat\s+should\s+i\s+teach\s+(next|first)\b",
+    r"\bwhat\s+do\s+i\s+teach\s+(next|first)\b",
 ]
 
 _CLASSROOM_SUMMARY_PATTERNS = [
@@ -266,7 +285,10 @@ def _extract_student_name(text: str) -> Optional[str]:
 # ─── Deterministic intent classification ─────────────────────────────────────
 
 def _matches_any(text: str, patterns: list[str]) -> bool:
-    tl = text.lower()
+    normalized = re.sub(r"[’‘`]", "'", text.strip())
+    normalized = re.sub(r"\s+", " ", normalized).lower()
+    normalized = re.sub(r"[.!?]+$", "", normalized).strip()
+    tl = normalized
     return any(re.search(p, tl) for p in patterns)
 
 
@@ -309,7 +331,10 @@ def _classify_deterministic(text: str, request: CopilotRequest) -> IntentResult:
         )
 
     # ── Classroom summary ─────────────────────────────────────────────────────
-    if _matches_any(text, _CLASSROOM_SUMMARY_PATTERNS):
+    if (
+        (_matches_any(text, _ATTENTION_PATTERNS) and not concept_id)
+        or _matches_any(text, _CLASSROOM_SUMMARY_PATTERNS)
+    ):
         return IntentResult(
             intent=CopilotIntent.CLASSROOM_LEARNING_SUMMARY,
             parameters=params, missing_parameters=missing,
@@ -481,9 +506,17 @@ def extract_intent(request: CopilotRequest) -> IntentResult:
     3. Validate LLM result; fall back to deterministic on any error.
     """
     deterministic = _classify_deterministic(request.message, request)
+    print(
+        "[CALCMATE_TRACE] deterministic_intent "
+        f"intent={deterministic.intent.value!r} "
+        f"confidence={deterministic.confidence!r} "
+        f"parameter_keys={sorted(deterministic.parameters.keys())!r}",
+        flush=True,
+    )
 
     # If deterministic is confident, return immediately.
     if deterministic.confidence >= 0.9:
+        print("[CALCMATE_TRACE] intent_decision source='deterministic'", flush=True)
         return deterministic
 
     # Attempt LLM enrichment for low-confidence / general cases.
@@ -492,13 +525,21 @@ def extract_intent(request: CopilotRequest) -> IntentResult:
         if llm_result and llm_result.intent != CopilotIntent.GENERAL_QUESTION:
             # Merge deterministic params (screen context) into LLM result
             merged_params = {**deterministic.parameters, **llm_result.parameters}
-            return IntentResult(
+            result = IntentResult(
                 intent=llm_result.intent,
                 parameters=merged_params,
                 missing_parameters=llm_result.missing_parameters,
                 extraction_method="llm",
                 confidence=llm_result.confidence,
             )
+            print(
+                "[CALCMATE_TRACE] intent_decision "
+                f"source='llm' intent={result.intent.value!r} "
+                f"confidence={result.confidence!r}",
+                flush=True,
+            )
+            return result
 
+    print("[CALCMATE_TRACE] intent_decision source='deterministic_fallback'", flush=True)
     return deterministic
 
