@@ -307,6 +307,11 @@ def build(cfg: Config) -> None:
         all_texts.extend(chunks)
         all_meta.extend(meta)
 
+    reviewed=Path(__file__).resolve().parents[1]/'data/foundational_resources.json'
+    if reviewed.is_file():
+        for resource in json.loads(reviewed.read_text(encoding='utf-8')):
+            all_texts.append(resource['text'])
+            all_meta.append({**resource,'chunk_index':0,'char_count':len(resource['text'])})
     log.info(f"\n  total chunks: {len(all_texts)}")
     if skipped:
         log.warning(f"  skipped/missing PDFs ({len(skipped)}): {', '.join(skipped)}")
@@ -341,6 +346,9 @@ def build(cfg: Config) -> None:
 
     _banner("STAGE 5: WRITE METADATA")
     _write_meta(all_texts, all_meta, cfg.meta_path)
+    sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+    from src.resource_coverage import write_manifest
+    write_manifest(cfg.index_path,cfg.meta_path,cfg.model_name)
     meta_kb = cfg.meta_path.stat().st_size / 1024
     log.info(f"  wrote {cfg.meta_path}  ({meta_kb:.1f} KB, {len(all_meta)} entries)")
 

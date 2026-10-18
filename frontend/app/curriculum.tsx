@@ -29,7 +29,7 @@ export default function CurriculumKnowledgeGraphScreen() {
   }>();
 
   const requestedGrade = params.grade ? Number(params.grade) : 0;
-  const [selectedGrade, setSelectedGrade] = useState<number>([1, 2, 3, 4].includes(requestedGrade) ? requestedGrade : 0);
+  const [selectedGrade, setSelectedGrade] = useState<number>([1, 2, 3, 4, 5].includes(requestedGrade) ? requestedGrade : 0);
   const [selectedConceptId, setSelectedConceptId] = useState<string | null>(
     params.conceptId || null
   );
@@ -67,7 +67,7 @@ export default function CurriculumKnowledgeGraphScreen() {
     let active = true;
     if (effectiveSelectedConceptId) {
       const g = selectedGrade > 0 ? selectedGrade : 3;
-      void getConceptExplanation(effectiveSelectedConceptId, g)
+      void getConceptExplanation(effectiveSelectedConceptId, g,{mode:overlayMode,studentId:selectedStudentId})
         .then(exp => {
           if (active) setExplanation(exp);
         })
@@ -78,7 +78,7 @@ export default function CurriculumKnowledgeGraphScreen() {
     return () => {
       active = false;
     };
-  }, [effectiveSelectedConceptId, selectedGrade]);
+  }, [effectiveSelectedConceptId, selectedGrade,selectedStudentId,overlayMode,data]);
 
   const activeStudent = students.find(s => s.id === selectedStudentId);
 

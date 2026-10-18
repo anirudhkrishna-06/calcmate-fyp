@@ -50,8 +50,8 @@ class CopilotRequest(BaseModel):
     # The teacher's natural-language message (required).
     message: str = Field(min_length=1, max_length=2000)
 
-    # Grade context (1–4). Used for retrieval and routing.
-    grade: int = Field(ge=1, le=4)
+    # Grade context (1-5). Used for retrieval and routing.
+    grade: int = Field(ge=1, le=5)
 
     # Subject is always Math in the current scope.
     subject: str = Field(default="Math")

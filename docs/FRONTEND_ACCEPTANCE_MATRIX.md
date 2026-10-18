@@ -1,3 +1,5 @@
+Current status: the [app improvement report](app-improvement-validation.md) supersedes earlier integration and grade-coverage findings below. It records automated verification separately from pending physical-device checks.
+
 # CALCMATE — Frontend Acceptance Matrix
 
 **Document ID**: `CALCMATE-FE-ACCEPTANCE-MATRIX-2026-10-17`  
@@ -43,7 +45,7 @@
 ### ACC-01 to ACC-04: Core Classroom Setup & Attendance
 - **Result**: **PASS**.
 - **Evidence**:
-  - `authService.exploreDemo()` seeds demo workspace with 32 students in 4 grades.
+  - `authService.exploreDemo()` seeds demo workspace with 40 students in 5 grades. Existing demos add the Grade 5 roster once, preserving prior edits and deletions.
   - `classroomSummary()` accurately reflects daily statistics.
   - `AttendanceWorkspace` handles state transitions, undo, and atomic commits.
   - Test suites `database.cjs` and `workspace-ui.cjs` execute clean assertions against simulated SQLite.

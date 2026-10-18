@@ -1,3 +1,5 @@
+Current account/evidence/planning contracts and coverage: [App improvement report](app-improvement-validation.md).
+
 # Accounts, Preview and Android Builds
 
 ## Local Preview
@@ -33,7 +35,7 @@ The backend loads embedding models lazily. Cold initialization on a busy machine
 1. Start the combined API and open `http://localhost:8000/admin` on the administrator computer (or the API LAN address on a phone). At startup the server prints an administrator access code. Use it to sign into the inbox. Set `CALCMATE_ADMIN_PASSWORD` before startup if you prefer a permanent code. Keep this code with the administrator.
 2. Teachers sign up in CalcMate. The browser inbox automatically checks for new requests every ten seconds and displays their name, email, school, grades and teaching experience.
 3. Click **Approve teacher**. The teacher can immediately log in; rejected requests remain locked. The old CLI approval command is still available but is no longer needed for routine approval.
-4. Approved teacher accounts open with **32 fictional Indian students** (eight per grade) and sample assessments for presentations. Students > Add student enrolls additional students. Names, edits and deletions survive future logins. Existing enrollments with the same grade/roll number are preserved. Set `CALCMATE_PRESENTATION_ROSTER=false` before startup to disable the presentation roster for new workspaces; already-created local data is retained.
+4. Approved teacher accounts open with **40 fictional Indian students** (eight per grade, Grades 1-5) and sample assessments for presentations. Students > Add student enrolls additional students. Names, edits and deletions survive future logins. Existing enrollments with the same grade/roll number are preserved. Existing presentation workspaces receive the Grade 5 additions once on their next login or online session refresh. Set `CALCMATE_PRESENTATION_ROSTER=false` before startup to disable the presentation roster for new workspaces; already-created local data is retained.
 5. SecureStore persists the approved account session. Classroom data can reopen offline for up to the issued 24-hour expiry. Home exposes Log out at the top right. It clears the stored session and queues server revocation without deleting classroom records. Session expiry also locks access.
 6. Explore demo remains a separate explicit workspace and never replaces a failed teacher login.
 
@@ -94,7 +96,7 @@ Optional cloud alternative: `eas build --platform android --profile preview` aft
 ## Android Acceptance
 
 - First installation: Welcome, unavailable-server state without credential fields, signup > pending approval > approved login. Presentation accounts receive the configured starter roster.
-- Demo: clear banner, initial 32 students/eight per grade only in a fresh demo; force-stop and reopen to confirm edits persist without duplication. Home > Log out returns to Welcome and preserves records.
+- Demo: clear banner, initial 40 students/eight per grade across Grades 1-5 in a fresh demo; existing demos receive the Grade 5 additions once on reopening. Force-stop and reopen to confirm edits persist without duplication. Home > Log out returns to Welcome and preserves records.
 - Home grade selector, class attendance confirmation/save, student edit/assessment/notes, and profile save. Force-stop/reopen without clearing storage.
 - Airplane mode in an installed bundled build: CRUD, plans/history, backup/restore and saved chats work; new AI answers do not pretend to generate.
 - Backup pick/cancel/restore confirmation and invalid-file rollback. Never restore across accounts or while an assistant request is pending.

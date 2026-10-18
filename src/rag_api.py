@@ -18,9 +18,11 @@ from pathlib import Path
 from threading import Lock
 from typing import Literal, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
+from src.classroom_contracts import ClassroomEvidence, assert_workspace, evidence_database
+from src.auth_api import require_teacher
 
 
 # ─── Request / Response Models ────────────────────────────────────────────────
@@ -28,7 +30,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     question: str = Field(min_length=1, max_length=2000)
-    grade: Literal[1, 2, 3, 4]
+    grade: Literal[1, 2, 3, 4, 5]
     subject: Literal["Math"] = "Math"
     k: int = Field(default=3, ge=1, le=10)
     use_llm: bool = True
@@ -37,6 +39,7 @@ class ChatRequest(BaseModel):
     student_id:   Optional[str] = Field(default=None)
     concept_id:   Optional[str] = Field(default=None)
     screen_context: Optional[str] = Field(default=None)
+    classroom_evidence: ClassroomEvidence | None = None
 
 
 class ChunkResponse(BaseModel):
@@ -45,6 +48,9 @@ class ChunkResponse(BaseModel):
     grade: int
     subject: str
     source_pdf: str
+    source_url: str | None = None
+    source_pages: str | None = None
+    resource_kind: str = "textbook_passage"
     chunk_index: int
     score: float
     used_fallback: bool
@@ -54,6 +60,7 @@ class ChatResponse(BaseModel):
     answer: str
     chunks: list[ChunkResponse]
     mode: Literal["generated", "retrieval-only", "copilot"] = "generated"
+    evidence_revision: str | None = None
     # Stage 3 structured fields (absent for plain RAG responses)
     intent: Optional[str] = None
     evidence_found: Optional[str] = None
@@ -70,6 +77,7 @@ class HealthResponse(BaseModel):
     rag_loaded: bool
     retrieval_dependencies_available: bool
     corpus_available: bool
+    coverage: dict = Field(default_factory=dict)
     generation_available: bool = False
     configured_model: str = "llama3.2:3b"
     generation_message: str = ""
@@ -170,6 +178,11 @@ def _run_copilot_pipeline(request: ChatRequest) -> ChatResponse:
     from src.copilot_operations import dispatch
     from src.response_composer import compose_deterministic, compose_with_llm
 
+    if request.classroom_evidence and not request.student_id:
+        import re
+        candidates=[s.id for s in request.classroom_evidence.students if re.search(r'\b'+re.escape(s.name)+r'\b',request.question,re.I)]
+        if len(candidates)==1:
+            request.student_id=candidates[0]
     copilot_req = Req(
         message=request.question,
         grade=request.grade,
@@ -235,7 +248,7 @@ def _run_copilot_pipeline(request: ChatRequest) -> ChatResponse:
                 {"chunk_id": c.chunk_id, "text": c.text, "grade": c.grade,
                  "subject": c.subject, "source_pdf": c.source_pdf,
                  "chunk_index": c.chunk_index, "score": c.score,
-                 "used_fallback": c.used_fallback}
+                 "used_fallback": c.used_fallback,"source_url":getattr(c,"source_url",None),"source_pages":getattr(c,"source_pages",None),"resource_kind":getattr(c,"resource_kind","textbook_passage")}
                 for c in raw_chunks
             ]
             _trace(
@@ -254,7 +267,7 @@ def _run_copilot_pipeline(request: ChatRequest) -> ChatResponse:
         dummy_chunks = [SimpleNamespace(**c) for c in rag_chunks]
         rag_answer = source_excerpt_answer(dummy_chunks)
 
-    if request.use_llm:
+    if request.use_llm and intent_result.intent in {CopilotIntent.GENERAL_QUESTION,CopilotIntent.EXPLAIN_CONCEPT,CopilotIntent.RECOMMEND_CURRICULUM_ACTIVITY,CopilotIntent.RETRIEVE_NCERT_RESOURCE}:
         copilot_response = compose_with_llm(
             op_result, intent_result, copilot_req,
             rag_answer=rag_answer, rag_chunks=rag_chunks,
@@ -281,7 +294,7 @@ def _run_copilot_pipeline(request: ChatRequest) -> ChatResponse:
         try:
             chunk_responses.append(ChunkResponse(**{
                 k: c[k] for k in ("chunk_id", "text", "grade", "subject",
-                                   "source_pdf", "chunk_index", "score", "used_fallback")
+                                   "source_pdf", "chunk_index", "score", "used_fallback","source_url","source_pages","resource_kind") if k in c
             }))
         except Exception:
             pass
@@ -290,6 +303,7 @@ def _run_copilot_pipeline(request: ChatRequest) -> ChatResponse:
         answer=copilot_response.answer,
         chunks=chunk_responses,
         mode="copilot",
+        evidence_revision=request.classroom_evidence.revision if request.classroom_evidence else None,
         intent=copilot_response.intent,
         evidence_found=copilot_response.evidence_found,
         graph_finding=copilot_response.graph_finding,
@@ -306,8 +320,9 @@ def _run_copilot_pipeline(request: ChatRequest) -> ChatResponse:
 def health() -> HealthResponse:
     data = Path(__file__).resolve().parent.parent / "data"
     available, model, message = generation_status()
+    from src.resource_coverage import coverage
     return HealthResponse(
-        status="ok", rag_loaded=_rag_loaded,
+        status="ok", rag_loaded=_rag_loaded,coverage=coverage(),
         generation_available=available, configured_model=model, generation_message=message,
         retrieval_dependencies_available=all(importlib.util.find_spec(name) is not None
                                              for name in ("faiss", "numpy", "sentence_transformers")),
@@ -317,12 +332,22 @@ def health() -> HealthResponse:
 
 
 @app.post("/chat", response_model=ChatResponse)
-def chat(request: ChatRequest) -> ChatResponse:
+def chat(request: ChatRequest, http_request: Request, authorization: str | None = Header(default=None)) -> ChatResponse:
+    if request.workspace_id or request.student_id or request.classroom_evidence:
+        teacher = require_teacher(http_request, authorization)
+        assert_workspace(request.workspace_id, teacher)
+        if request.classroom_evidence is None:
+            raise HTTPException(422, "Refresh classroom evidence before asking about students.")
+        assert_workspace(request.classroom_evidence.workspace_id, teacher)
+        request.workspace_id = teacher["workspace_id"]
     _trace("chat_received", subject=request.subject, grade=request.grade, use_llm=request.use_llm)
     # Stage 3: Route structured copilot requests through the intent pipeline.
     if _is_copilot_request(request):
         with _lock:
             try:
+                if request.classroom_evidence:
+                    with evidence_database(request.classroom_evidence):
+                        return _run_copilot_pipeline(request)
                 return _run_copilot_pipeline(request)
             except Exception as exc:
                 logging.getLogger("uvicorn.error").exception("CalcMate copilot pipeline failed")
@@ -357,6 +382,6 @@ def chat(request: ChatRequest) -> ChatResponse:
     _trace("plain_rag_complete", mode=mode, chunks=len(chunks), answer_length=len(answer))
     return ChatResponse(answer=answer, mode=mode, chunks=[ChunkResponse(
         chunk_id=c.chunk_id, text=c.text, grade=c.grade, subject=c.subject,
-        source_pdf=c.source_pdf, chunk_index=c.chunk_index, score=c.score,
+        source_pdf=c.source_pdf, source_url=getattr(c,"source_url",None),source_pages=getattr(c,"source_pages",None),resource_kind=getattr(c,"resource_kind","textbook_passage"),chunk_index=c.chunk_index, score=c.score,
         used_fallback=c.used_fallback,
     ) for c in chunks])

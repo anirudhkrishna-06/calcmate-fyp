@@ -49,7 +49,7 @@ function validateProfile(value:unknown):value is Teacher {
   const p=value as Teacher;
   return !!p && typeof p.name==="string" && !!p.name.trim() && typeof p.schoolName==="string" &&
     !!p.schoolName.trim() && p.preferredSubject==="Math" && Number.isInteger(p.experience) && p.experience!>=0 &&
-    p.experience!<=60 && Array.isArray(p.grades) && p.grades.length>0 && p.grades.every(g=>[1,2,3,4].includes(g));
+    p.experience!<=60 && Array.isArray(p.grades) && p.grades.length>0 && p.grades.every(g=>[1,2,3,4,5].includes(g));
 }
 export async function signUp(email:string,password:string,profile:SignupInput):Promise<{status:"pending-approval"}> {
   validate(email,password);

@@ -1,3 +1,4 @@
+import type { ClassroomEvidence } from "@/services/classroomEvidenceService";
 import { Grade } from "./domain";
 /** Base chat request — backward compatible. Stage 3 adds optional copilot context fields. */
 export type ChatRequest = {
@@ -11,8 +12,9 @@ export type ChatRequest = {
   student_id?: string;
   concept_id?: string;
   screen_context?: string;
+  classroom_evidence?:ClassroomEvidence;
 };
-export type RagChunk = { chunk_id:number; text:string; grade:number; subject:string; source_pdf:string; chunk_index:number; score:number; used_fallback:boolean };
+export type RagChunk = { source_url?:string|null;source_pages?:string|null;resource_kind?:string; chunk_id:number; text:string; grade:number; subject:string; source_pdf:string; chunk_index:number; score:number; used_fallback:boolean };
 /** Stage 4: structured action signal from backend to invoke the on-device scheduler. */
 export type ScheduleAction = {
   action: "invoke_local_scheduler";
@@ -25,6 +27,7 @@ export type ScheduleAction = {
 /** Stage 3: extended response with structured copilot fields. All new fields are optional for backward compatibility. */
 export type RagResponse = {
   answer: string;
+  evidence_revision?:string|null;
   chunks: RagChunk[];
   // Stage 3 copilot fields (absent for plain RAG responses)
   mode?: "generated" | "retrieval-only" | "copilot";

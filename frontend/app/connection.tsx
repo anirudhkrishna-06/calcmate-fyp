@@ -17,7 +17,7 @@ export default function Connection() {
   useFocusEffect(useCallback(()=>{
     let current=true;
     setBusy(true);setStatus('Checking server');setDetails('');setMessage("Checking server...");
-    checkConnection().then(result=>{if(current){setStatus('Connected');setFailed(false);setMessage(result.accounts?'Teacher accounts available.':result.accountError);setDetails(result.generationMessage??'');}})
+    checkConnection().then(result=>{if(current){setStatus('Connected');setFailed(false);setMessage(result.accounts?'Teacher accounts available.':result.accountError);setDetails([result.generationMessage,result.coverageMessage].filter(Boolean).join('\n'));}})
       .catch(async error=>{const network=await NetInfo.fetch().catch(()=>null);if(current){setStatus(network?.isConnected===false?'Offline':'Server unavailable');setFailed(true);setMessage(error instanceof Error ? error.message : "Server unavailable.");}})
       .finally(()=>{if(current)setBusy(false);});
     return ()=>{current=false;};
@@ -26,7 +26,7 @@ export default function Connection() {
     setBusy(true);setStatus('Checking server');setMessage("");setDetails('');
     try {
       if(save)await changeAccountEndpoint(address);const result=await checkConnection();
-      setStatus('Connected');setMessage(result.accounts?(save?'Connection saved. Teacher accounts available.':'Teacher accounts available.'):result.accountError);setDetails(result.generationMessage??'');
+      setStatus('Connected');setMessage(result.accounts?(save?'Connection saved. Teacher accounts available.':'Teacher accounts available.'):result.accountError);setDetails([result.generationMessage,result.coverageMessage].filter(Boolean).join('\n'));
       setFailed(false);void flushRevocations().catch(()=>{});
     } catch(e) {const network=await NetInfo.fetch().catch(()=>null);setStatus(network?.isConnected===false?'Offline':'Server unavailable');setFailed(true);setMessage(e instanceof Error ? e.message : "Unable to connect.");}
     finally {setBusy(false);}

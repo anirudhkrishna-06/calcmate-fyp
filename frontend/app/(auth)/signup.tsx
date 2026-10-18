@@ -30,7 +30,7 @@ export default function SignupScreen() {
       <TextField label="School" value={school} onChangeText={setSchool} maxLength={150} />
       <TextField label="Experience in years" value={experience} onChangeText={setExperience} keyboardType="number-pad" />
       </Section><Section title="Teaching grades">
-      <Choices values={[1,2,3,4].map(g=>({value:String(g),label:`Grade ${g}`}))} selected={grades} onSelect={g=>setGrades(old=>old.includes(g)?old.filter(v=>v!==g):[...old,g])} />
+      <Choices values={[1,2,3,4,5].map(g=>({value:String(g),label:`Grade ${g}`}))} selected={grades} onSelect={g=>setGrades(old=>old.includes(g)?old.filter(v=>v!==g):[...old,g])} />
       <AppText muted>Maths</AppText>
       </Section><Section title="Account details"><TextField label="Email" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" autoComplete="email" />
       <TextField label="Password (8+ characters, letters and numbers)" value={password} onChangeText={setPassword} secureTextEntry maxLength={128} autoComplete="new-password" />

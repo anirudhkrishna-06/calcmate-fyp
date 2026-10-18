@@ -217,7 +217,7 @@ def _extract_grade(text: str, default: int) -> int:
     if m:
         raw = m.group(2) or m.group(3)
         g = int(raw)
-        return g if 1 <= g <= 4 else default
+        return g if 1 <= g <= 5 else default
     return default
 
 
@@ -431,7 +431,7 @@ Valid intents (choose one):
   generate_instructional_schedule, general_question
 
 Parameters to extract (include only what is present):
-  grade (int 1-4), concept_phrase (str), student_name (str)
+  grade (int 1-5), concept_phrase (str), student_name (str)
 
 Output ONLY valid JSON with keys: intent (str), parameters (object).
 Do not add any explanation.
@@ -468,7 +468,7 @@ def _try_llm_extraction(request: CopilotRequest) -> Optional[IntentResult]:
         # Resolve any concept phrase from the LLM output
         concept_phrase = raw_params.pop("concept_phrase", None)
         grade = int(raw_params.get("grade", request.grade) or request.grade)
-        if grade < 1 or grade > 4:
+        if grade < 1 or grade > 5:
             grade = request.grade
         concept_id = request.concept_id or (
             resolve_concept_id(concept_phrase, grade) if concept_phrase else None

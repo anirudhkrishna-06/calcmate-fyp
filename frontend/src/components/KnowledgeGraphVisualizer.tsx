@@ -48,6 +48,7 @@ export function KnowledgeGraphVisualizer({
     if (node.stateStatus === "needs_support") {
       return { border: colors.danger, bg: "#fee2e2", text: colors.danger, badge: "Needs Revision" };
     }
+    if(overlayMode==="group"&&node.studentsAssessed&&node.totalStudents&&node.studentsAssessed<node.totalStudents)return {border:colors.attention,bg:"#fef3c7",text:colors.attention,badge:"Partial evidence"};
     if (node.stateStatus === "insufficient") {
       return { border: colors.attention, bg: "#fef3c7", text: colors.attention, badge: "Developing" };
     }

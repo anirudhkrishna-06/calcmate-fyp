@@ -30,13 +30,13 @@ export async function classroomSummary(grade=0) {
   return {...summary,teacher:await loadTeacher(),mode:session.mode,presentationRoster:session.presentationRoster===true,rotation,plan:upcoming ?? matching[0],upcoming:!!upcoming,activeSession};
 }
 export async function attendanceRegister(grade:number,date:string) {
-  validateDate(date);if(![1,2,3,4].includes(grade))throw new Error("Select a grade.");
+  validateDate(date);if(![1,2,3,4,5].includes(grade))throw new Error("Select a grade.");
   const session=await requireSession();const students=await loadStudents("",grade);
   const records=await withTransaction(async tx=>{await assertScope(tx,session);return tx.getAllAsync<AttendanceRecord>("SELECT * FROM attendance WHERE workspace_id=? AND date=?",session.workspaceId,date);});
   return students.map(s=>({...s,status:records.find(r=>r.student_id===s.id)?.status ?? null}));
 }
 export async function classLearningEvidence(grade:number){
-  if(![1,2,3,4].includes(grade))throw new Error("Choose a Grade 1 to 4 class.");
+  if(![1,2,3,4,5].includes(grade))throw new Error("Choose a Grade 1 to 5 class.");
   const session=await requireSession();
   return withTransaction(async tx=>{
     await assertScope(tx,session);const w=session.workspaceId;
@@ -53,7 +53,7 @@ export async function classLearningEvidence(grade:number){
   });
 }
 export async function saveClassAttendance(grade:number,date:string,entries:{studentId:string;status:AttendanceRecord["status"]}[]) {
-  validateDate(date);if(![1,2,3,4].includes(grade)||!entries.length)throw new Error("Select a class and mark at least one student.");
+  validateDate(date);if(![1,2,3,4,5].includes(grade)||!entries.length)throw new Error("Select a class and mark at least one student.");
   if(new Set(entries.map(e=>e.studentId)).size!==entries.length)throw new Error("Duplicate attendance entry.");
   const session=await requireSession();const now=new Date().toISOString();
   await withTransaction(async tx=>{

@@ -1,20 +1,9 @@
-"""
-CALCMATE — Stage 2: Python Learner Intelligence Service
-src/learner_intelligence.py
+"""Learner reasoning over observed classroom evidence.
 
-Reads from the mobile SQLite database (calcmate.db) when running as a local
-server. Provides graph-aware learner state queries, group summaries, and
-prerequisite gap analysis using the canonical knowledge graph from Stage 1.
-
-Architecture note: The TypeScript side (learnerStateService.ts) is the
-PRIMARY estimator running on-device. This Python module is optional
-enrichment that activates when the server is connected. It DOES NOT
-duplicate the curriculum graph per student; it reads pre-computed
-learner_concept_states rows written by the TypeScript estimator.
-
-All functions that accept a db_path default to the SQLite file the Expo
-app creates at the standard Expo document directory. When running tests or
-calling from the FastAPI server, pass the path explicitly.
+Public APIs authenticate mobile snapshots and adapt them to an isolated in-memory
+SQLite connection. Internal SQL helpers also support explicit fixture paths for
+research and tests. Public request models never accept server database paths.
+The mobile and server estimators share a versioned rule and numerical fixtures.
 """
 
 from __future__ import annotations
@@ -35,6 +24,11 @@ NEEDS_SUPPORT_THRESHOLD = 0.60
 
 @contextmanager
 def _connect(db_path: str):
+    from src.classroom_contracts import snapshot_connection
+    supplied = snapshot_connection.get()
+    if supplied is not None:
+        yield supplied
+        return
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON;")
@@ -97,7 +91,7 @@ def get_student_knowledge_view(
 
         grade_concepts = conn.execute(
             """SELECT id, title, grade FROM concepts
-               WHERE workspace_id=? AND grade=? ORDER BY id""",
+               WHERE workspace_id=? AND grade<=? ORDER BY id""",
             (workspace_id, student["grade"]),
         ).fetchall()
 
@@ -277,7 +271,7 @@ def get_group_concept_summary(
     """
     with _connect(db_path) as conn:
         students = conn.execute(
-            "SELECT id FROM students WHERE workspace_id=? AND grade=?",
+            "SELECT id,name FROM students WHERE workspace_id=? AND grade=?",
             (workspace_id, grade),
         ).fetchall()
         total = len(students)
@@ -288,7 +282,7 @@ def get_group_concept_summary(
         student_ids = [s["id"] for s in students]
         placeholders = ",".join("?" * len(student_ids))
         states = conn.execute(
-            f"""SELECT state_status, mastery_estimate FROM learner_concept_states
+            f"""SELECT student_id, state_status, mastery_estimate FROM learner_concept_states
                 WHERE workspace_id=? AND concept_id=? AND student_id IN ({placeholders})""",
             (workspace_id, concept_id, *student_ids),
         ).fetchall()
@@ -310,6 +304,7 @@ def get_group_concept_summary(
         "concept_id": concept_id,
         "total_students": total,
         "assessed_students": assessed,
+        "students": [{"id": student["id"], "name": student["name"], "state_status": next((r["state_status"] for r in states if r["student_id"] == student["id"]), "unknown"), "mastery_estimate": next((r["mastery_estimate"] for r in states if r["student_id"] == student["id"]), None)} for student in students],
         "counts": counts,
         "mean_mastery": mean_mastery,
     }
@@ -362,7 +357,7 @@ def get_group_prerequisite_readiness(
     for pid in prereq_ids:
         node_data = kg.nodes.get(pid, {})
         title = node_data.get("concept", pid)
-        ready = sum(1 for s in by_concept[pid] if s["state_status"] == "likely_ready")
+        ready = sum(1 for s in by_concept[pid] if s["mastery_estimate"] is not None and s["mastery_estimate"] >= NEEDS_SUPPORT_THRESHOLD)
         assessed = len(by_concept[pid])
         prerequisites_out.append({
             "concept_id": pid,
@@ -373,7 +368,7 @@ def get_group_prerequisite_readiness(
             "readiness_fraction": ready / total,
         })
 
-    group_ready = all(p["readiness_fraction"] >= 0.5 for p in prerequisites_out)
+    group_ready = all(p["students_assessed"] == total and p["readiness_fraction"] == 1 for p in prerequisites_out)
 
     return {
         "concept_id": concept_id,

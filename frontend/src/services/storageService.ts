@@ -2,7 +2,7 @@ import { Teacher, Grade, Student, ScheduleItem } from "@/types/domain";
 import { requireSession } from "./authService";
 import type { SQLiteDatabase } from "expo-sqlite";
 import { assertScope, getDatabase, repository, today, newId, withTransaction, AttendanceRecord, AssessmentRecord } from "./database";
-import { updateLearnerConceptState } from "./learnerStateService";
+import { persistLearnerState } from "./learnerEstimator";
 
 
 export async function initializeStorage() { await getDatabase(); }
@@ -26,7 +26,7 @@ export async function saveTeacher(teacher: Teacher) {
   const session = await requireSession();
   if (!teacher.name.trim() || !teacher.schoolName.trim()) throw new Error("Name and school are required.");
   if (!Number.isInteger(teacher.experience) || teacher.experience! < 0 || teacher.experience! > 60) throw new Error("Experience must be between 0 and 60 years.");
-  if (!teacher.grades.length || teacher.grades.some(g => ![1,2,3,4].includes(g))) throw new Error("Select at least one grade.");
+  if (!teacher.grades.length || teacher.grades.some(g => ![1,2,3,4,5].includes(g))) throw new Error("Select at least one grade.");
   if (teacher.preferredSubject !== "Math") throw new Error("Only Maths is supported.");
   await repository("profiles", session).save({ data: JSON.stringify({ ...teacher, id: session.teacherId, name: teacher.name.trim(), schoolName: teacher.schoolName.trim() }) }, session.teacherId);
 }
@@ -45,7 +45,7 @@ export async function loadStudents(search = "", grade?: number): Promise<Student
 }
 export async function saveStudent(input: { name: string; grade: number; roll: string }, id?: string) {
   if (!input.name.trim() || !input.roll.trim()) throw new Error("Name and roll number are required.");
-  if (![1,2,3,4].includes(input.grade)) throw new Error("Choose a grade from 1 to 4.");
+  if (![1,2,3,4,5].includes(input.grade)) throw new Error("Choose a grade from 1 to 5.");
   try { return await (await localRepository("students")).save({ ...input, name: input.name.trim(), roll:input.roll.trim() }, id); }
   catch (error) { if (String(error).includes("UNIQUE")) throw new Error("This roll number is already used in this grade."); throw error; }
 }
@@ -76,14 +76,12 @@ export async function saveAssessment(input: Omit<AssessmentRecord, "id" | "works
     if (oldConceptId) await refreshCompetency(tx,session.workspaceId,input.student_id,oldConceptId);
     await refreshCompetency(tx,session.workspaceId,input.student_id,input.concept_id);
   });
-  // Update learner concept states outside the write-serialized transaction
-  if (oldConceptId) await updateLearnerConceptState(input.student_id, oldConceptId);
-  await updateLearnerConceptState(input.student_id, input.concept_id);
+
 }
 
 export async function saveClassAssessments(input:{grade:number;conceptId:string;date:string;maximum:number;entries:{studentId:string;score:number}[]}) {
   validateDate(input.date);
-  if(![1,2,3,4].includes(input.grade) || !input.entries.length)throw new Error("Select a class and enter at least one mark.");
+  if(![1,2,3,4,5].includes(input.grade) || !input.entries.length)throw new Error("Select a class and enter at least one mark.");
   if(!Number.isFinite(input.maximum)||input.maximum<=0||input.maximum>1000)throw new Error("Maximum marks must be greater than zero and at most 1000.");
   if(new Set(input.entries.map(e=>e.studentId)).size!==input.entries.length)throw new Error("Duplicate student marks.");
   if(input.entries.some(e=>!Number.isFinite(e.score)||e.score<0||e.score>input.maximum))throw new Error(`Marks must be between 0 and ${input.maximum}.`);
@@ -97,42 +95,24 @@ export async function saveClassAssessments(input:{grade:number;conceptId:string;
       await refreshCompetency(tx,w,entry.studentId,input.conceptId);
     }
   });
-  // Update learner states outside the serialized transaction
-  for (const entry of input.entries) {
-    await updateLearnerConceptState(entry.studentId, input.conceptId);
-  }
   return input.entries.length;
 }
 
-async function refreshCompetency(tx: SQLiteDatabase, workspaceId: string, studentId: string, conceptId: string) {
-  const latest = await tx.getFirstAsync<AssessmentRecord>("SELECT * FROM assessments WHERE workspace_id=? AND student_id=? AND concept_id=? ORDER BY date DESC,created_at DESC,id DESC LIMIT 1",workspaceId,studentId,conceptId);
-  if (!latest) {
-    await tx.runAsync("DELETE FROM competencies WHERE workspace_id=? AND student_id=? AND concept_id=?",workspaceId,studentId,conceptId);
-  } else {
-    const now = new Date().toISOString();
-    await tx.runAsync(`INSERT INTO competencies VALUES(?,?,?,?,?,?,?)
-      ON CONFLICT(workspace_id,student_id,concept_id) DO UPDATE SET mastery=excluded.mastery,updated_at=excluded.updated_at`,
-      `competency-${studentId}-${conceptId}`,workspaceId,studentId,conceptId,latest.score/latest.maximum,now,now);
-  }
-}
+export async function refreshCompetency(tx:SQLiteDatabase,w:string,student:string,concept:string){return persistLearnerState(tx,w,student,concept);}
 export async function removeAssessment(id: string) {
   const session = await requireSession(); const db = await getDatabase(); await assertScope(db,session);
-  let removed: AssessmentRecord | undefined;
   await withTransaction(async tx => {
     const old = await tx.getFirstAsync<AssessmentRecord>("SELECT * FROM assessments WHERE workspace_id=? AND id=?",session.workspaceId,id);
     if (!old) return;
-    removed = old;
     await tx.runAsync("DELETE FROM assessments WHERE workspace_id=? AND id=?",session.workspaceId,id);
     await refreshCompetency(tx,session.workspaceId,old.student_id,old.concept_id);
   });
-  if (removed) await updateLearnerConceptState(removed.student_id, removed.concept_id);
+
 }
 
 export async function saveCompetency(studentId: string, conceptId: string, percentage: number) {
   if (!Number.isFinite(percentage) || percentage < 0 || percentage > 100) throw new Error("Competency must be between 0 and 100.");
-  const repo = await localRepository("competencies");
-  const old = (await repo.list()).find(c => c.student_id === studentId && c.concept_id === conceptId);
-  await repo.save({ student_id:studentId, concept_id:conceptId, mastery:percentage/100 },old?.id ?? `competency-${studentId}-${conceptId}`);
+  await saveAssessment({student_id:studentId,concept_id:conceptId,date:today(),score:percentage,maximum:100});
 }
 export async function saveObservation(studentId: string, note: string, id?: string) {
   if (!note.trim() || note.length > 2000) throw new Error("Enter an observation of 1 to 2000 characters.");
@@ -154,10 +134,10 @@ export async function dashboard() {
 }
 export async function exportWorkspace() {
   const session = await requireSession();
-  const result: Record<string, unknown> = { version:2, workspaceId:session.workspaceId, mode:session.mode, createdAt:new Date().toISOString() };
+  const result: Record<string, unknown> = { version:3, workspaceId:session.workspaceId, mode:session.mode, createdAt:new Date().toISOString() };
   const db = await getDatabase(); await assertScope(db,session);
   await withTransaction(async tx => {
-    for (const table of ["profiles","students","concepts","attendance","assessments","competencies","observations","schedules","messages","conversations","message_details"]) {
+    for (const table of ["profiles","students","concepts","attendance","assessments","competencies","observations","schedules","messages","conversations","message_details","concept_prerequisites","class_sessions","session_attendance_events","session_outcomes","assessment_origins"]) {
       result[table] = await tx.getAllAsync(`SELECT * FROM ${table} WHERE workspace_id=?`,session.workspaceId);
     }
   });

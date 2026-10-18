@@ -55,9 +55,9 @@ export async function accountAvailability() {
   return true;
 }
 export async function checkConnection() {
-  const health=await apiRequest("/health") as {status?:string;corpus_available?:boolean;retrieval_dependencies_available?:boolean;generation_available?:boolean;configured_model?:string;generation_message?:string};
+  const health=await apiRequest("/health") as {status?:string;corpus_available?:boolean;retrieval_dependencies_available?:boolean;generation_available?:boolean;configured_model?:string;generation_message?:string;coverage?:Record<string,{chunks:number;source_summaries:number;concept_ids:string[]}>};
   if(health.status!=="ok")throw new Error("This is not a compatible Calcmate server.");
   let accounts=false;let accountError="";try {accounts=await accountAvailability();} catch(error) {accountError=error instanceof Error ? error.message : "Account service unavailable.";}
-  return {accounts,accountError,ragReady:health.corpus_available===true && health.retrieval_dependencies_available===true,
+  return {accounts,accountError,coverageMessage:health.coverage?Object.entries(health.coverage).map(([grade,c])=>`Grade ${grade}: ${c.chunks} resources covering ${c.concept_ids.length} concepts${c.source_summaries?" (selected source summaries)":""}`).join("\n"):"",ragReady:health.corpus_available===true && health.retrieval_dependencies_available===true,
     generationReady:health.generation_available===true,model:health.configured_model,generationMessage:health.generation_message};
 }

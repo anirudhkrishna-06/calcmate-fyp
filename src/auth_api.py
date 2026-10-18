@@ -95,7 +95,7 @@ class Signup(Credentials):
     name: str = Field(min_length=1, max_length=100)
     schoolName: str = Field(min_length=1, max_length=150)
     experience: int = Field(ge=0, le=60)
-    grades: list[Literal[1, 2, 3, 4]] = Field(min_length=1, max_length=4)
+    grades: list[Literal[1, 2, 3, 4, 5]] = Field(min_length=1, max_length=5)
 
     @field_validator("name", "schoolName")
     @classmethod
@@ -213,6 +213,13 @@ def authorized(authorization: str | None):
         if not row or row["expires"] <= time.time() or not row["approved"] or row["disabled"]:
             raise HTTPException(401, "Your session is no longer valid. Log in again.")
         return dict(row)
+
+
+def require_teacher(request: Request, authorization: str | None = Header(default=None)):
+    """The server session, never a request body, owns classroom access."""
+    transport(request)
+    row = authorized(authorization)
+    return {"teacher_id": row["account_id"], "workspace_id": "teacher-" + row["account_id"]}
 
 
 @router.get("/me", response_model=SessionResponse, response_model_exclude_none=True)

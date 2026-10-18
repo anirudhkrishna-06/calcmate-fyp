@@ -2,7 +2,7 @@ import { Grade } from "./domain";
 import { StudentRecord, AttendanceRecord, AssessmentRecord, CompetencyRecord, ConceptRecord } from "@/services/database";
 export type PlanningSelection = { grade:Grade; subject:"Math"; date:string; availableMinutes:number };
 export type PlanningPayload = {
-  version:1; workspaceId:string; teacherId:string; selection:PlanningSelection;
+  version:1; localRevision?:number; workspaceId:string; teacherId:string; selection:PlanningSelection;
   students:StudentRecord[]; attendance:AttendanceRecord[]; assessments:AssessmentRecord[];
   competencies:CompetencyRecord[]; concepts:ConceptRecord[];
 };

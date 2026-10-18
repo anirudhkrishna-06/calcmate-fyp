@@ -11,19 +11,21 @@
  *  - Estimator name/version stored in each row for auditability.
  */
 
-import { getDatabase, LearnerConceptStateRecord, AssessmentRecord } from "./database";
+import { withTransaction, assertScope, getDatabase, LearnerConceptStateRecord } from "./database";
+import { persistLearnerState } from "./learnerEstimator";
 import { requireSession } from "./authService";
+export { computeMasteryEstimate } from "./learnerEstimator";
 
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 export const MASTERY_THRESHOLD = 0.70;
 export const NEEDS_SUPPORT_THRESHOLD = 0.60;
-const ESTIMATOR_NAME = "score-ratio-v1";
-const ESTIMATOR_VERSION = "1";
+
+
 
 // Recency weight: most recent assessment weighted higher.
 // Weight for assessment i (0 = most recent) is (DECAY^i).
-const RECENCY_DECAY = 0.75;
+
 
 // ─── Core Types ───────────────────────────────────────────────────────────────
 export type StateStatus = "unknown" | "insufficient" | "needs_support" | "likely_ready";
@@ -89,49 +91,6 @@ export interface PrerequisiteAnalysis {
  * Sorted by date (most recent first) before weighting.
  * Returns null mastery when evidence_count === 0.
  */
-export function computeMasteryEstimate(assessments: Pick<AssessmentRecord, "score" | "maximum" | "date" | "created_at" | "id">[]): MasteryEstimateResult {
-  const evidence_count = assessments.length;
-
-  if (evidence_count === 0) {
-    return {
-      mastery_estimate: null,
-      evidence_count: 0,
-      last_evidence_at: null,
-      state_status: "unknown",
-      evidence_sufficiency: "none",
-    };
-  }
-
-  // Sort descending by date, then created_at, then id for stability
-  const sorted = [...assessments].sort((a, b) =>
-    b.date.localeCompare(a.date) || b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id)
-  );
-
-  // Recency-weighted average: weight[i] = DECAY^i
-  let weightedSum = 0;
-  let weightTotal = 0;
-  for (let i = 0; i < sorted.length; i++) {
-    const ratio = sorted[i].score / sorted[i].maximum;
-    const weight = Math.pow(RECENCY_DECAY, i);
-    weightedSum += ratio * weight;
-    weightTotal += weight;
-  }
-  const mastery_estimate = weightedSum / weightTotal;
-
-  const last_evidence_at = sorted[0].date;
-
-  const evidence_sufficiency: EvidenceSufficiency =
-    evidence_count >= 4 ? "sufficient" :
-    evidence_count >= 2 ? "moderate" :
-    "limited";
-
-  const state_status: StateStatus =
-    mastery_estimate >= MASTERY_THRESHOLD ? "likely_ready" :
-    mastery_estimate >= NEEDS_SUPPORT_THRESHOLD ? "insufficient" :
-    "needs_support";
-
-  return { mastery_estimate, evidence_count, last_evidence_at, state_status, evidence_sufficiency };
-}
 
 // ─── DB-backed Functions ────────────────────────────────────────────────────────
 
@@ -140,81 +99,9 @@ export function computeMasteryEstimate(assessments: Pick<AssessmentRecord, "scor
  * Called after every saveAssessment / removeAssessment.
  * Must run inside or outside a transaction — uses getDatabase() directly.
  */
-export async function updateLearnerConceptState(
-  studentId: string,
-  conceptId: string
-): Promise<void> {
-  const session = await requireSession();
-  const db = await getDatabase();
-  const w = session.workspaceId;
-
-  // Fetch all assessments for this student/concept
-  const assessments = await db.getAllAsync<AssessmentRecord>(
-    "SELECT * FROM assessments WHERE workspace_id=? AND student_id=? AND concept_id=? ORDER BY date DESC,created_at DESC,id DESC",
-    w, studentId, conceptId
-  );
-
-  const result = computeMasteryEstimate(assessments);
-  const now = new Date().toISOString();
-
-  // Upsert using UNIQUE(workspace_id, student_id, concept_id)
-  const existingRow = await db.getFirstAsync<{ id: string }>(
-    "SELECT id FROM learner_concept_states WHERE workspace_id=? AND student_id=? AND concept_id=?",
-    w, studentId, conceptId
-  );
-  const rowId = existingRow?.id ?? `lcs-${studentId}-${conceptId}`;
-
-  await db.runAsync(
-    `INSERT INTO learner_concept_states
-       (id,workspace_id,student_id,concept_id,mastery_estimate,evidence_count,last_evidence_at,
-        estimator_name,estimator_version,state_status,evidence_sufficiency,updated_at,created_at)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
-     ON CONFLICT(workspace_id,student_id,concept_id) DO UPDATE SET
-       mastery_estimate=excluded.mastery_estimate,
-       evidence_count=excluded.evidence_count,
-       last_evidence_at=excluded.last_evidence_at,
-       estimator_name=excluded.estimator_name,
-       estimator_version=excluded.estimator_version,
-       state_status=excluded.state_status,
-       evidence_sufficiency=excluded.evidence_sufficiency,
-       updated_at=excluded.updated_at`,
-    rowId, w, studentId, conceptId,
-    result.mastery_estimate,
-    result.evidence_count,
-    result.last_evidence_at,
-    ESTIMATOR_NAME, ESTIMATOR_VERSION,
-    result.state_status,
-    result.evidence_sufficiency,
-    now,
-    now   // created_at only applied on insert; ignored on conflict update
-  ).catch(async () => {
-
-    // Fallback: if the ON CONFLICT clause has issues with created_at, do a two-step upsert
-    if (!existingRow) {
-      await db.runAsync(
-        `INSERT OR IGNORE INTO learner_concept_states
-           (id,workspace_id,student_id,concept_id,mastery_estimate,evidence_count,last_evidence_at,
-            estimator_name,estimator_version,state_status,evidence_sufficiency,updated_at,created_at)
-         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        rowId, w, studentId, conceptId,
-        result.mastery_estimate, result.evidence_count, result.last_evidence_at,
-        ESTIMATOR_NAME, ESTIMATOR_VERSION,
-        result.state_status, result.evidence_sufficiency,
-        now, now
-      );
-    } else {
-      await db.runAsync(
-        `UPDATE learner_concept_states SET
-           mastery_estimate=?,evidence_count=?,last_evidence_at=?,
-           estimator_name=?,estimator_version=?,state_status=?,evidence_sufficiency=?,updated_at=?
-         WHERE workspace_id=? AND student_id=? AND concept_id=?`,
-        result.mastery_estimate, result.evidence_count, result.last_evidence_at,
-        ESTIMATOR_NAME, ESTIMATOR_VERSION,
-        result.state_status, result.evidence_sufficiency,
-        now, w, studentId, conceptId
-      );
-    }
-  });
+export async function updateLearnerConceptState(studentId:string,conceptId:string):Promise<void>{
+ const session=await requireSession();
+ await withTransaction(async tx=>{await assertScope(tx,session);await persistLearnerState(tx,session.workspaceId,studentId,conceptId);});
 }
 
 /**
@@ -251,7 +138,7 @@ export async function getStudentKnowledgeView(
 
   // All concepts for this grade
   const concepts = await db.getAllAsync<{ id: string; title: string; grade: number }>(
-    "SELECT id,title,grade FROM concepts WHERE workspace_id=? AND grade=? ORDER BY id",
+    "SELECT id,title,grade FROM concepts WHERE workspace_id=? AND grade<=? ORDER BY id",
     w, student.grade
   );
 
@@ -457,7 +344,7 @@ export async function getPrerequisiteAnalysis(
 
 /** Human-readable label for state_status. */
 export function stateLabel(status: StateStatus): string {
-  return { unknown: "Not assessed", insufficient: "Limited evidence", needs_support: "Needs revision", likely_ready: "Likely ready" }[status];
+  return { unknown: "Not assessed", insufficient: "Developing", needs_support: "Needs revision", likely_ready: "Likely ready" }[status];
 }
 
 /** Human-readable label for evidence_sufficiency. */

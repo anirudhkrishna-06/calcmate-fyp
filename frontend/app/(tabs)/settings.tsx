@@ -22,7 +22,7 @@ export default function SettingsScreen(){
       {text:"Cancel",style:"cancel"},{text:"Replace records",style:"destructive",onPress:()=>void applyRestore(selected.json)}
     ]);
   }catch(e){setStatus(e instanceof Error?e.message:"Could not read backup.");setFailed(true);}finally{setBusy(false);}}
-  async function applyRestore(json:string){setBusy(true);try{await restoreBackupJson(json);setStatus("Classroom restored. Open Home to see your records.");setFailed(false);await reload();}catch(e){setStatus(e instanceof Error?e.message:"Restore failed; current records were retained.");setFailed(true);}finally{setBusy(false);}}
+  async function applyRestore(json:string){setBusy(true);try{const result=await restoreBackupJson(json);setStatus(["Classroom restored. Open Home to see your records.",...(result?.warnings??[])].join(" "));setFailed(false);await reload();}catch(e){setStatus(e instanceof Error?e.message:"Restore failed; current records were retained.");setFailed(true);}finally{setBusy(false);}}
   return <Screen><AppText variant="title">Settings</AppText><FormStatus message={error} error/>
     <Section title="Server connection"><Button label="Server connection" icon="link-outline" variant="secondary" onPress={()=>router.push('/connection')}/></Section>
     <Section title="Teacher profile"><ActionRow title="Profile and teaching grades" onPress={()=>router.push("/profile")}/><AppText variant="small" muted>{data?.session?.mode==="demo"?"Demo workspace":data?.session?"Approved teacher account":"Opening account..."}</AppText></Section>
@@ -35,6 +35,6 @@ export default function SettingsScreen(){
       <View style={{flexDirection:"row",flexWrap:"wrap",gap:8}}><Button label={busy?"Please wait...":"Create backup"} icon="archive-outline" disabled={busy} onPress={()=>void backup()} style={{flexGrow:1}}/><Button label="Restore backup" icon="download-outline" variant="secondary" disabled={busy} onPress={()=>void restore()} style={{flexGrow:1}}/></View>
       <AppText variant="small" muted>Backups include classroom records and exclude passwords and account tokens. Keep files private.</AppText><FormStatus message={status} error={failed}/>
     </Section>
-    <Section title="About CalcMate"><AppText>Maths · Grades 1–4</AppText><AppText variant="small" muted>Version 0.1.0</AppText></Section>
+    <Section title="About CalcMate"><AppText>Maths - Grades 1-5</AppText><AppText variant="small" muted>Version 0.1.0</AppText></Section>
   </Screen>;
 }

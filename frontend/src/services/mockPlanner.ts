@@ -1,7 +1,8 @@
+import { computeMasteryEstimate } from "./learnerEstimator";
 import { PlanningPayload, PlanningSelection, PlanningSummary, ScheduleDraft, Lesson } from "@/types/planning";
 
 export function validatePlanningSelection(selection:PlanningSelection) {
-  if (![1,2,3,4].includes(selection.grade) || selection.subject !== "Math") throw new Error("Choose a Grade 1-4 Maths class.");
+  if (![1,2,3,4,5].includes(selection.grade) || selection.subject !== "Math") throw new Error("Choose a Grade 1-5 Maths class.");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(selection.date) || !Number.isFinite(Date.parse(selection.date)) || new Date(selection.date).toISOString().slice(0,10) !== selection.date) throw new Error("Enter a valid planning date (YYYY-MM-DD).");
   if (!Number.isInteger(selection.availableMinutes) || selection.availableMinutes < 20 || selection.availableMinutes > 240) throw new Error("Choose 20 to 240 whole minutes.");
 }
@@ -11,11 +12,8 @@ export function eligibleStudents(payload:PlanningPayload) {
 }
 // Use the lower of teacher competency and latest assessment when both exist.
 export function conceptEvidence(payload:PlanningPayload, studentId:string, conceptId:string):number | null {
-  const competency = payload.competencies.find(c => c.student_id === studentId && c.concept_id === conceptId);
-  const assessment = payload.assessments.filter(a => a.student_id === studentId && a.concept_id === conceptId)
-    .sort((a,b) => b.date.localeCompare(a.date) || b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id))[0];
-  const values = [competency?.mastery,assessment ? assessment.score/assessment.maximum : undefined].filter((v):v is number => v !== undefined);
-  return values.length ? Math.min(...values) : null;
+  const rows=payload.assessments.filter(a=>a.student_id===studentId&&a.concept_id===conceptId);
+  return rows.length?computeMasteryEstimate(rows).mastery_estimate:payload.competencies.find(c=>c.student_id===studentId&&c.concept_id===conceptId)?.mastery??null;
 }
 function relevantConcepts(payload:PlanningPayload) {
   const found = new Set<string>(); const visiting = new Set<string>();

@@ -1,3 +1,5 @@
+import { seedCanonicalCurriculum } from "./curriculumStore";
+import { rebuildWorkspaceStates } from "./learnerEstimator";
 import { Scope,assertScope,withTransaction } from "./database";
 import { conceptSeed,canonicalPrerequisiteSeed,indianStudentNames,repairCanonicalPrerequisites } from "./demoService";
 import { Teacher } from "@/types/domain";
@@ -18,16 +20,21 @@ export async function initializeTeacherWorkspace(scope:Scope,profile:Teacher,pre
         scope.workspaceId, id, prerequisite, 'PREREQUISITE_OF', 'verified');
     }
     await repairCanonicalPrerequisites(tx, scope.workspaceId);
+    await seedCanonicalCurriculum(tx,scope.workspaceId);
+    await rebuildWorkspaceStates(tx,scope.workspaceId);
     if(!presentationRoster)return;
     const marker=`presentation-roster-v1:${scope.workspaceId}`;
-    if(await tx.getFirstAsync("SELECT key FROM app_meta WHERE key=?",marker))return;
+    const gradeFiveMarker=`presentation-roster-grade5-v1:${scope.workspaceId}`;
+    const existingRoster=await tx.getFirstAsync("SELECT key FROM app_meta WHERE key=?",marker);
+    if(existingRoster && await tx.getFirstAsync("SELECT key FROM app_meta WHERE key=?",gradeFiveMarker))return;
     const w=scope.workspaceId;
-    for(let i=0;i<indianStudentNames.length;i++) {
+    // Upgrade only the new grade; earlier roster edits and deletions stay intact.
+    for(let i=existingRoster?32:0;i<indianStudentNames.length;i++) {
       const grade=Math.floor(i/8)+1;
       const roll=String(i%8+1).padStart(2,"0");
-      // Existing enrolments win; a starter roster never replaces teacher records.
-      if(await tx.getFirstAsync("SELECT id FROM students WHERE workspace_id=? AND grade=? AND roll=?",w,grade,roll))continue;
       const id=`starter-student-${i+1}`;
+      // Existing enrolments win; a starter roster never replaces teacher records.
+      if(await tx.getFirstAsync("SELECT id FROM students WHERE workspace_id=? AND (id=? OR (grade=? AND roll=?))",w,id,grade,roll))continue;
       await tx.runAsync("INSERT INTO students VALUES(?,?,?,?,?,?,?)",id,w,indianStudentNames[i],grade,roll,now,now);
       for(const [concept] of conceptSeed.filter(c=>c[2]===grade)) {
         const mastery=[0.35,0.55,0.78,0.9,0.48,0.82,0.62,0.95][i%8];
@@ -42,6 +49,8 @@ export async function initializeTeacherWorkspace(scope:Scope,profile:Teacher,pre
       }
 
     }
-    await tx.runAsync("INSERT INTO app_meta(key,value) VALUES(?,?)",marker,now);
+    await rebuildWorkspaceStates(tx,w);
+    await tx.runAsync("INSERT OR IGNORE INTO app_meta(key,value) VALUES(?,?)",marker,now);
+    await tx.runAsync("INSERT OR IGNORE INTO app_meta(key,value) VALUES(?,?)",gradeFiveMarker,now);
   });
 }

@@ -4,7 +4,7 @@ export const teacher: Teacher = {
   id: "teacher-local",
   name: "Ananya Rao",
   schoolName: "Green Valley Primary",
-  grades: [1, 2, 3, 4],
+  grades: [1, 2, 3, 4, 5],
   preferredSubject: "Math"
 };
 

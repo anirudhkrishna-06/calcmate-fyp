@@ -10,13 +10,10 @@ One function per structured intent. Each function:
 - Returns an OperationResult with structured_data, evidence_summary, graph_finding, etc.
 - NEVER fabricates student data, mastery values, citations, or schedules.
 
-RAG corpus limitation: Only Grades 3–5 are indexed. Grades 1–2 have no retrieval.
-This must be disclosed in the limitations field.
+Resource coverage is read from shipped metadata. Selected foundational resources have explicit limitations and provenance.
 """
 from __future__ import annotations
 
-import os
-from pathlib import Path
 from typing import Optional
 
 from src.copilot_contract import (
@@ -26,30 +23,18 @@ from src.copilot_contract import (
 from src.knowledge_graph import load_kg, prerequisite_readiness
 from src import learner_intelligence as li
 
-_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-_DB_SEARCH_PATHS = [
-    Path(os.getenv("CALCMATE_DB_PATH", "")) if os.getenv("CALCMATE_DB_PATH") else None,
-    Path.home() / "Documents" / "ExponentAsync" / "SQLite" / "calcmate.db",
-    Path.home() / "Documents" / "calcmate.db",
-    _DATA_DIR.parent / "calcmate.db",
-]
-
-RAG_GRADES_INDEXED = {3, 4, 5}
-
-
 def _find_db() -> Optional[str]:
-    for p in _DB_SEARCH_PATHS:
-        if p and p.is_file():
-            print(f"[CALCMATE_TRACE] classroom_db_found path={str(p)!r}", flush=True)
-            return str(p)
-    print("[CALCMATE_TRACE] classroom_db_missing", flush=True)
-    return None
+    from src.classroom_contracts import snapshot_connection
+    return "request-snapshot" if snapshot_connection.get() is not None else None
 
 
 def _rag_limitation(grade: int) -> Optional[str]:
-    if grade not in RAG_GRADES_INDEXED:
-        return (f"The NCERT retrieval corpus covers Grades 3–5. "
-                f"No textbook content is indexed for Grade {grade}.")
+    from src.resource_coverage import coverage
+    current=coverage().get(str(grade),{})
+    if not current.get('chunks'):
+        return f'No textbook resources are indexed for Grade {grade}.'
+    if current.get('source_summaries'):
+        return f'Grade {grade} has selected source summaries; coverage is partial and these are labelled separately from textbook passages.'
     return None
 
 
@@ -69,7 +54,7 @@ def _retrieve_for_concept(concept_phrase: str, grade: int, k: int = 3) -> list[d
                 "chunk_id": c.chunk_id, "text": c.text[:400], "grade": c.grade,
                 "subject": c.subject, "source_pdf": c.source_pdf,
                 "chunk_index": c.chunk_index, "score": round(c.score, 3),
-                "used_fallback": c.used_fallback,
+                "used_fallback": c.used_fallback,"source_url":getattr(c,"source_url",None),"source_pages":getattr(c,"source_pages",None),"resource_kind":getattr(c,"resource_kind","textbook_passage"),
             }
             for c in chunks
         ]
@@ -128,6 +113,12 @@ def op_find_students_by_concept(intent: IntentResult, request: CopilotRequest) -
             f"{needs_support} need support, {likely_ready} likely ready, "
             f"{unknown} unassessed."
         )
+        identified = [s["name"] for s in summary.get("students", []) if s["state_status"] == "needs_support"]
+        unassessed = [s["name"] for s in summary.get("students", []) if s["state_status"] == "unknown"]
+        if identified:
+            evidence += " Students needing support: " + ", ".join(identified) + "."
+        if unassessed:
+            evidence += " No assessment evidence: " + ", ".join(unassessed) + "."
         graph_finding = None
         if summary.get("mean_mastery") is not None:
             graph_finding = f"Group mean mastery: {summary['mean_mastery']:.0%}."
@@ -430,7 +421,7 @@ def op_classroom_learning_summary(intent: IntentResult, request: CopilotRequest)
     try:
         import sqlite3
         import datetime
-        with sqlite3.connect(db_path) as conn:
+        with li._connect(db_path) as conn:
             conn.row_factory = sqlite3.Row
             students = conn.execute(
                 "SELECT id, name FROM students WHERE workspace_id=? AND grade=? ORDER BY name",
@@ -478,7 +469,7 @@ def op_classroom_learning_summary(intent: IntentResult, request: CopilotRequest)
                     prerequisite_unknown.append(concept["concept_title"])
             insufficient_count = sum(
                 1 for c in view["concepts"]
-                if (c.get("state") or {}).get("state_status") in ("unknown", "insufficient")
+                if (c.get("state") or {}).get("state_status") == "unknown"
             ) + len(prerequisite_unknown)
             priority = len(support) * 3 + len(prerequisite_support) * 2
             if not support and not prerequisite_support and insufficient_count:
@@ -505,7 +496,7 @@ def op_classroom_learning_summary(intent: IntentResult, request: CopilotRequest)
         attendance = []
         try:
             today = datetime.date.today().isoformat()
-            with sqlite3.connect(db_path) as conn:
+            with li._connect(db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 attendance = [dict(row) for row in conn.execute(
                     """SELECT s.name AS student_name, a.status FROM attendance a
@@ -614,14 +605,14 @@ def op_group_prerequisite_readiness(intent: IntentResult, request: CopilotReques
             evidence = f"No prerequisites for '{concept_phrase}' in the curriculum graph."
             graph_finding = "This is a foundational concept; no prerequisite readiness check needed."
         else:
-            low = [p for p in prereqs if p["readiness_fraction"] < 0.5]
+            low = [p for p in prereqs if p["readiness_fraction"] < 1]
             evidence = (
                 f"Group prerequisite readiness for '{concept_phrase}' (Grade {grade}): "
                 f"{len(prereqs)} prerequisite(s) checked. "
-                f"{'Group is ready.' if group_ready else f'{len(low)} prerequisite(s) below 50% readiness.'}"
+                f"{'Group is ready.' if group_ready else f'{len(low)} prerequisite(s) have support or missing-evidence gaps.'}"
             )
             graph_finding = (
-                "All prerequisites show ≥50% group readiness. Proceed with instruction."
+                "Every student has prerequisite evidence at or above the practice threshold. Proceed with instruction."
                 if group_ready
                 else f"Not ready: {', '.join(p['concept_title'] for p in low)} need more support first."
             )
@@ -764,16 +755,10 @@ def op_generate_instructional_schedule(intent: IntentResult, request: CopilotReq
         status=OperationStatus.OK,
         evidence_summary=evidence,
         recommended_next_step=(
-            "The schedule is being generated on your device using your current classroom data. "
+            "The schedule uses your current classroom evidence and the shared planning service. "
             "It will appear as a schedule card below this message."
         ),
-        limitations=[
-            "The instructional scheduler runs on-device using your recorded attendance "
-            "and assessment data. If you have not recorded data for today, the schedule "
-            "will use the most recent available evidence.",
-            "The NCERT retrieval corpus covers Grades 3–5. "
-            "Grades 1–2 concepts are handled by the curriculum graph only.",
-        ],
+        limitations=["Online planning uses observed classroom evidence. Offline schedules are labelled local heuristics; resource coverage varies by concept."],
         structured_data={
             # --- Stage 4 action signal ---
             "action": "invoke_local_scheduler",

@@ -230,7 +230,7 @@ export async function overlayGroupState(
   // Query learner states for this grade's students
   const studentRows = await db.getAllAsync<{ id: string }>(
     "SELECT id FROM students WHERE workspace_id=? AND grade=?",
-    w, grade
+    w,grade
   );
   const studentIds = studentRows.map(s => s.id);
   const total = studentIds.length;
@@ -244,10 +244,10 @@ export async function overlayGroupState(
   }
 
   // Pre-calculate per-concept stats
-  const conceptStats = new Map<string, { belowThreshold: number; assessed: number; totalMastery: number; count: number }>();
+  const conceptStats = new Map<string, { belowThreshold: number; support:number; assessed: number; totalMastery: number; count: number }>();
   for (const r of stateRows) {
     if (!conceptStats.has(r.concept_id)) {
-      conceptStats.set(r.concept_id, { belowThreshold: 0, assessed: 0, totalMastery: 0, count: 0 });
+      conceptStats.set(r.concept_id, { belowThreshold: 0, support:0, assessed: 0, totalMastery: 0, count: 0 });
     }
     const stat = conceptStats.get(r.concept_id)!;
     if (r.state_status !== "unknown") {
@@ -256,6 +256,7 @@ export async function overlayGroupState(
     if (r.mastery_estimate !== null) {
       stat.totalMastery += r.mastery_estimate;
       stat.count += 1;
+      if(r.mastery_estimate<NEEDS_SUPPORT_THRESHOLD)stat.support++;
       if (r.mastery_estimate < MASTERY_THRESHOLD) {
         stat.belowThreshold += 1;
       }
@@ -263,7 +264,7 @@ export async function overlayGroupState(
   }
 
   const updatedNodes = graph.nodes.map(node => {
-    if (node.grade !== grade || total === 0) {
+    if (node.grade > grade || total === 0) {
       return node;
     }
     const stat = conceptStats.get(node.id);
@@ -284,15 +285,13 @@ export async function overlayGroupState(
     const meanMastery = stat.count > 0 ? stat.totalMastery / stat.count : null;
     let status: StateStatus = "unknown";
     if (meanMastery !== null) {
-      status = meanMastery >= MASTERY_THRESHOLD ? "likely_ready" : meanMastery >= NEEDS_SUPPORT_THRESHOLD ? "insufficient" : "needs_support";
+      status = stat.support>0?"needs_support":stat.assessed<total?"unknown":stat.belowThreshold>0?"insufficient":"likely_ready";
     }
 
     // Check if any prerequisite has unresolved gaps
     const hasPrereqGap = node.prerequisiteIds.some(pid => {
       const pstat = conceptStats.get(pid);
-      if (!pstat || pstat.assessed === 0) return true;
-      const pmean = pstat.count > 0 ? pstat.totalMastery / pstat.count : 0;
-      return pmean < MASTERY_THRESHOLD;
+      return !pstat || pstat.assessed<total || pstat.support>0;
     });
 
     return {
@@ -320,7 +319,8 @@ export async function overlayGroupState(
  */
 export async function getConceptExplanation(
   conceptId: string,
-  grade: number
+  grade: number,
+  context:{mode:"none"|"group"|"student";studentId?:string|null}={mode:"group"}
 ): Promise<ConceptExplanation> {
   const session = await requireSession();
   const db = await getDatabase();
@@ -359,16 +359,18 @@ export async function getConceptExplanation(
 
   // Check group knowledge for prerequisites
   const students = await db.getAllAsync<{ id: string }>(
-    "SELECT id FROM students WHERE workspace_id=? AND grade=?",
-    w, grade
+    "SELECT id FROM students WHERE workspace_id=? AND (?=0 OR grade=?) AND (? IS NULL OR id=?)",
+    w,context.mode==="student"?0:grade,grade,context.mode==="student"?(context.studentId??null):null,context.mode==="student"?(context.studentId??null):null
   );
-  const studentIds = students.map(s => s.id);
+  const studentIds = context.mode==="none"?[]:students.map(s => s.id);
+  if(context.mode==="student"&&(!context.studentId||studentIds.length!==1))throw new Error("Select a student in this workspace.");
 
   const prereqDetails: ConceptExplanation["prerequisites"] = [];
   let hasPrereqGap = false;
   let gapReason: string | null = null;
 
   for (const p of prereqRows) {
+    let distribution="";
     let meanMastery: number | null = null;
     let status: StateStatus = "unknown";
     if (studentIds.length > 0) {
@@ -382,9 +384,16 @@ export async function getConceptExplanation(
         status = meanMastery >= MASTERY_THRESHOLD ? "likely_ready" : meanMastery >= NEEDS_SUPPORT_THRESHOLD ? "insufficient" : "needs_support";
       }
     }
-    if (status === "needs_support" || status === "unknown") {
+    if(context.mode==='group'&&studentIds.length){
+      const all=await db.getAllAsync<LearnerConceptStateRecord>(`SELECT * FROM learner_concept_states WHERE workspace_id=? AND concept_id=? AND student_id IN (${studentIds.map(()=>'?').join(',')})`,w,p.prerequisite_id,...studentIds);
+      const weak=all.filter(r=>r.mastery_estimate!==null&&r.mastery_estimate<NEEDS_SUPPORT_THRESHOLD).length;
+      const unknown=studentIds.length-all.filter(r=>r.mastery_estimate!==null).length;
+      if(weak)status='needs_support';else if(unknown)status='unknown';
+      distribution=`${weak} students need support; ${unknown} of ${studentIds.length} have no prerequisite evidence.`;
+    }
+    if (context.mode!=="none"&&(status === "needs_support" || status === "unknown")) {
       hasPrereqGap = true;
-      gapReason = `Prerequisite "${p.title}" has unresolved learning gaps (mean mastery: ${meanMastery !== null ? Math.round(meanMastery * 100) + "%" : "no evidence"}).`;
+      gapReason = `Prerequisite "${p.title}" has unresolved learning gaps (mean mastery: ${meanMastery !== null ? Math.round(meanMastery * 100) + "%" : "no evidence"}). ${distribution}`;
     }
     prereqDetails.push({
       id: p.prerequisite_id,
@@ -395,7 +404,6 @@ export async function getConceptExplanation(
   }
 
   // Check target concept status in this group
-  let targetMastery: number | null = null;
   let targetStatus: StateStatus = "unknown";
   if (studentIds.length > 0) {
     const states = await db.getAllAsync<LearnerConceptStateRecord>(
@@ -404,12 +412,11 @@ export async function getConceptExplanation(
     );
     const valids = states.filter(s => s.mastery_estimate !== null).map(s => s.mastery_estimate!);
     if (valids.length > 0) {
-      targetMastery = valids.reduce((a, b) => a + b, 0) / valids.length;
-      targetStatus = targetMastery >= MASTERY_THRESHOLD ? "likely_ready" : targetMastery >= NEEDS_SUPPORT_THRESHOLD ? "insufficient" : "needs_support";
+      targetStatus = valids.some(v=>v<NEEDS_SUPPORT_THRESHOLD)?"needs_support":valids.length<studentIds.length?"unknown":valids.some(v=>v<MASTERY_THRESHOLD)?"insufficient":"likely_ready";
     }
   }
 
-  const isReady = !hasPrereqGap && (targetStatus === "likely_ready" || targetStatus === "insufficient" || targetStatus === "unknown");
+  const isReady = context.mode!=="none" && !hasPrereqGap && targetStatus === "likely_ready";
 
   let suggestedAction = "Introduce with guided teacher modeling and concrete manipulatives.";
   if (hasPrereqGap) {
@@ -429,6 +436,7 @@ export async function getConceptExplanation(
     schedulerPriorityReason = "Moderate priority: initial diagnostic assessment recommended.";
   }
 
+  if(context.mode==="none"){suggestedAction="Select a student or class overlay to inspect learner readiness.";schedulerPriorityReason=null;}
   return {
     conceptId,
     conceptTitle: concept.title,

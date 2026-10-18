@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useRef, useCallback } from "react";
 import { View, StyleSheet, Modal, Alert } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { Screen } from "@/components/Screen";
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
@@ -64,90 +64,89 @@ export default function ActiveSessionScreen() {
 
   const { data, error: loadError, loading, reload } = useLocalData(loader);
 
-  const [currentBlockIndex, setCurrentBlockIndex] = useState(0);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [status, setStatus] = useState<"active" | "paused" | "completed">("active");
-  const [initialized, setInitialized] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [actionBusy, setActionBusy] = useState(false);
+  const actionPending = useRef(false);
+  const currentBlockIndex = data?.session.current_block_index ?? 0;
+  const status = data?.session.status ?? "active";
 
   // Attendance modal state
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const [attendanceMsg, setAttendanceMsg] = useState("");
 
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const syncCounterRef = useRef(0);
+  // Stack screens stay mounted behind the review. Only the focused screen may
+  // sync progress; useLocalData reloads the persisted status on every focus.
+  useFocusEffect(useCallback(() => {
+    const current = data?.session;
+    if (!current || loading || loadError || actionBusy) return;
+    setElapsedSeconds(effectiveElapsedSeconds(current));
+    if (current.status !== "active") return;
 
-  // Sync state once data loads
-  if (data && !initialized) {
-    setCurrentBlockIndex(data.session.current_block_index || 0);
-    setElapsedSeconds(effectiveElapsedSeconds(data.session));
-    setStatus(data.session.status);
-    setInitialized(true);
-  }
-
-  // Timer loop
-  useEffect(() => {
-    if (status === "active") {
-      timerRef.current = setInterval(() => {
-        setElapsedSeconds(prev => {
-          const next = prev + 1;
-          syncCounterRef.current += 1;
-          if (syncCounterRef.current >= 10 && data?.session) {
-            syncCounterRef.current = 0;
-            void updateSessionProgress(data.session.id, currentBlockIndex, next);
-          }
-          return next;
-        });
-      }, 1000);
-      const maybeNodeTimer = timerRef.current as unknown as { unref?: () => void };
-      if (typeof maybeNodeTimer?.unref === "function") {
-        maybeNodeTimer.unref();
-      }
-    } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    }
+    let cancelled = false;
+    let syncing = false;
+    let ticks = 0;
+    const timer = setInterval(() => {
+      if (cancelled) return;
+      const next = effectiveElapsedSeconds(current);
+      setElapsedSeconds(next);
+      ticks += 1;
+      if (ticks < 10 || syncing) return;
+      ticks = 0;
+      syncing = true;
+      void updateSessionProgress(current.id, current.current_block_index, next)
+        .catch(e => {
+          if (cancelled) return;
+          clearInterval(timer);
+          setActionError(e instanceof Error ? e.message : "Failed to save session progress.");
+          void reload();
+        })
+        .finally(() => { syncing = false; });
+    }, 1000);
+    const maybeNodeTimer = timer as unknown as { unref?: () => void };
+    maybeNodeTimer.unref?.();
     return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
+      cancelled = true;
+      clearInterval(timer);
     };
-  }, [status, data?.session, currentBlockIndex]);
+  }, [data?.session, loading, loadError, actionBusy, reload]));
 
   async function handlePauseResume() {
-    if (!data?.session) return;
+    if (!data?.session || status === "completed" || actionPending.current) return;
+    actionPending.current = true;
+    setActionBusy(true);
     setActionError("");
     try {
       if (status === "active") {
-        await pauseClassSession(data.session.id, elapsedSeconds);
-        setStatus("paused");
+        await pauseClassSession(data.session.id, effectiveElapsedSeconds(data.session));
       } else {
         await resumeClassSession(data.session.id);
-        setStatus("active");
       }
+      await reload();
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "Failed to change session status.");
+      await reload();
+    } finally {
+      actionPending.current = false;
+      setActionBusy(false);
     }
   }
 
-  async function handleNextBlock() {
-    if (!data?.schedule || !data?.session) return;
-    if (currentBlockIndex < data.schedule.blocks.length - 1) {
-      const nextIndex = currentBlockIndex + 1;
-      setCurrentBlockIndex(nextIndex);
-      await updateSessionProgress(data.session.id, nextIndex, elapsedSeconds);
-    }
-  }
-
-  async function handlePrevBlock() {
-    if (!data?.schedule || !data?.session) return;
-    if (currentBlockIndex > 0) {
-      const prevIndex = currentBlockIndex - 1;
-      setCurrentBlockIndex(prevIndex);
-      await updateSessionProgress(data.session.id, prevIndex, elapsedSeconds);
+  async function handleChangeBlock(index: number) {
+    if (!data?.schedule || !data?.session || status === "completed" || actionPending.current || index < 0 || index >= data.schedule.blocks.length) return;
+    actionPending.current = true;
+    setActionBusy(true);
+    setActionError("");
+    try {
+      await updateSessionProgress(data.session.id, index, effectiveElapsedSeconds(data.session));
+      await reload();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "Failed to change rotation block.");
+      await reload();
+    } finally {
+      actionPending.current = false;
+      setActionBusy(false);
     }
   }
 
@@ -165,6 +164,14 @@ export default function ActiveSessionScreen() {
 
   function handleFinishClass() {
     if (!data?.session) return;
+    const openReview = () => router.push({
+      pathname: "/post-class-review",
+      params: { sessionId: data.session.id, scheduleId: data.schedule?.id ?? "" }
+    });
+    if (status === "completed") {
+      openReview();
+      return;
+    }
     Alert.alert(
       "Finish Class Session",
       "Are you ready to conclude this class and proceed to the post-class review?",
@@ -172,12 +179,7 @@ export default function ActiveSessionScreen() {
         { text: "Cancel", style: "cancel" },
         {
           text: "Proceed to Review",
-          onPress: () => {
-            router.push({
-              pathname: "/post-class-review",
-              params: { sessionId: data.session.id, scheduleId: data.schedule?.id ?? "" }
-            });
-          }
+          onPress: openReview
         }
       ]
     );
@@ -220,21 +222,24 @@ export default function ActiveSessionScreen() {
       footer={
         <View style={styles.footerControls}>
           <Button
-            label={status === "active" ? "Pause" : "Resume"}
+            label={status === "completed" ? "Completed" : status === "active" ? "Pause" : "Resume"}
             icon={status === "active" ? "pause-outline" : "play-outline"}
             variant="secondary"
+            disabled={loading || actionBusy || status === "completed"}
             onPress={() => void handlePauseResume()}
             style={{ flex: 1 }}
           />
           <Button
             label="Attendance note"
+            disabled={loading || actionBusy || status === "completed"}
             icon="people-outline"
             variant="quiet"
             onPress={() => setShowAttendanceModal(true)}
             style={{ flex: 1 }}
           />
           <Button
-            label="End & Review"
+            label={status === "completed" ? "View class review" : "End & Review"}
+            disabled={loading || actionBusy}
             icon="checkmark-done-outline"
             onPress={handleFinishClass}
             style={{ flex: 1 }}
@@ -264,8 +269,8 @@ export default function ActiveSessionScreen() {
           <Button
             label="← Prev"
             variant="quiet"
-            disabled={currentBlockIndex <= 0}
-            onPress={() => void handlePrevBlock()}
+            disabled={loading || actionBusy || status === "completed" || currentBlockIndex <= 0}
+            onPress={() => void handleChangeBlock(currentBlockIndex - 1)}
           />
           <View style={{ alignItems: "center" }}>
             <AppText variant="subheading">
@@ -278,8 +283,8 @@ export default function ActiveSessionScreen() {
           <Button
             label="Next →"
             variant="quiet"
-            disabled={currentBlockIndex >= schedule.blocks.length - 1}
-            onPress={() => void handleNextBlock()}
+            disabled={loading || actionBusy || status === "completed" || currentBlockIndex >= schedule.blocks.length - 1}
+            onPress={() => void handleChangeBlock(currentBlockIndex + 1)}
           />
         </View>
       ) : null}

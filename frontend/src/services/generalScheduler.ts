@@ -1,15 +1,16 @@
+import { computeMasteryEstimate } from "./learnerEstimator";
 import type { Grade } from '@/types/domain';
 import type { PlanningPayload } from '@/types/planning';
 import type { GeneralSelection,GeneralDraft,GradeNeed,RotationBlock } from '@/types/generalSchedule';
 
 export function validateGeneralSelection(s:GeneralSelection){
   if(!s||!Number.isInteger(s.availableMinutes)||s.availableMinutes<5||s.availableMinutes>480)throw new Error('Choose 5 to 480 whole minutes.');
-  if(!Array.isArray(s.grades)||!s.grades.length||s.grades.length>4||new Set(s.grades).size!==s.grades.length||s.grades.some(g=>![1,2,3,4].includes(g)))throw new Error('Select at least one grade.');
+  if(!Array.isArray(s.grades)||!s.grades.length||s.grades.length>5||new Set(s.grades).size!==s.grades.length||s.grades.some(g=>![1,2,3,4,5].includes(g)))throw new Error('Select at least one grade.');
   if(!['balanced','learning-needs'].includes(s.priority))throw new Error('Choose a planning priority.');
   const parsed=new Date(`${s.date}T12:00:00Z`);
   if(typeof s.date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(s.date)||!Number.isFinite(parsed.getTime())||parsed.toISOString().slice(0,10)!==s.date)throw new Error('Choose a valid planning date.');
 }
-const basics:Record<Grade,string>={1:'Counting and addition',2:'Place value and subtraction',3:'Multiplication and sharing',4:'Fractions and measurement'};
+const basics:Record<Grade,string>={1:'Counting and addition',2:'Place value and subtraction',3:'Multiplication and sharing',4:'Fractions and measurement',5:'Decimals, fractions and area'};
 const prerequisitesOf=(concept:{prerequisite_id:string|null; prerequisite_ids?:string[]})=>concept.prerequisite_ids?.length?concept.prerequisite_ids:(concept.prerequisite_id?[concept.prerequisite_id]:[]);
 
 /** Pure local rotation planner. Each sequential slot has one teacher assignment and a task for every grade. */
@@ -24,9 +25,9 @@ export function buildGeneralSchedule(selection:GeneralSelection,evidence:Plannin
     const attending=students.filter(s=>!absent.has(s.id));
     const concepts=(p?.concepts??[]).filter(c=>c.grade===grade).sort((a,b)=>a.id.localeCompare(b.id));
     const mastery=(student:string,concept:string)=>{
-      const c=p?.competencies.find(c=>c.student_id===student&&c.concept_id===concept);
-      const a=p?.assessments.filter(a=>a.student_id===student&&a.concept_id===concept).sort((a,b)=>b.date.localeCompare(a.date)||b.updated_at.localeCompare(a.updated_at)||b.id.localeCompare(a.id))[0];
-      return a&&(!c||a.updated_at>c.updated_at)?a.score/a.maximum:c?.mastery;
+      const rows=p?.assessments.filter(a=>a.student_id===student&&a.concept_id===concept)??[];
+      if(rows.length)return computeMasteryEstimate(rows.map(a=>({...a,created_at:a.created_at??a.updated_at}))).mastery_estimate??undefined;
+      return p?.competencies.find(c=>c.student_id===student&&c.concept_id===concept)?.mastery;
     };
     const ranked=concepts.map(c=>{
       const values=attending.map(s=>mastery(s.id,c.id));
@@ -89,7 +90,7 @@ export function buildGeneralSchedule(selection:GeneralSelection,evidence:Plannin
   else if(durations.some(d=>d<8))warnings.push('Teacher sessions are shorter than 8 minutes. Add time for meaningful individual instruction.');
   if(needs.some(n=>!n.students))warnings.push('Some grades have no enrolled students. Activities use grade-level readiness checks.');
   if(needs.some(n=>n.students&&n.attending===0))warnings.push('Some grades are recorded absent. Confirm attendance before using this schedule.');
-  return {kind:'general-schedule',version:1,selection:{...selection,grades},needs,warnings,blocks};
+  return {engine:'local-heuristic',policyVersion:'local-rotation-v2',kind:'general-schedule',version:1,selection:{...selection,grades},needs,warnings,blocks};
 }
 
 export function validateGeneralDraft(d:GeneralDraft){

@@ -59,7 +59,7 @@ MODEL_NAME = "all-MiniLM-L6-v2"
 
 # If a curriculum bucket has fewer chunks than this, we still apply the
 # filter (small bucket is fine); but if it's EMPTY we fall back to global.
-FALLBACK_ON_EMPTY_BUCKET = True
+FALLBACK_ON_EMPTY_BUCKET = False
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger("retrieve")
@@ -82,6 +82,9 @@ class RetrievedChunk:
     source_pdf: str
     chunk_index: int
     score: float          # cosine similarity in [-1, 1]; higher = more relevant
+    source_url: str | None = None
+    source_pages: str | None = None
+    resource_kind: str = "textbook_passage"
     used_fallback: bool = False   # True if curriculum filter was bypassed
 
 
@@ -117,6 +120,12 @@ class Retriever:
                 f"Run: python build_vector_store.py"
             )
 
+        manifest_path=Path(meta_path).parent/'corpus_manifest.json'
+        if manifest_path.is_file():
+            import hashlib
+            manifest=json.loads(manifest_path.read_text(encoding='utf-8'))
+            if hashlib.sha256(Path(index_path).read_bytes()).hexdigest()!=manifest['index_sha256'] or hashlib.sha256(Path(meta_path).read_bytes()).hexdigest()!=manifest['metadata_sha256']:
+                raise ValueError('Retrieval artifact checksums differ; rebuild the index and metadata together.')
         t0 = time.perf_counter()
         self.index = faiss.read_index(str(index_path))
         with open(meta_path, encoding="utf-8") as f:
@@ -138,7 +147,7 @@ class Retriever:
             self._buckets.setdefault((m["grade"], m["subject"]), []).append(m["id"])
 
         # Load the embedding model last (slowest step).
-        self.model = SentenceTransformer(model_name)
+        self.model = SentenceTransformer(model_name, local_files_only=True)
         self.model_name = model_name
 
         self.log_path = Path(log_path)
@@ -224,7 +233,7 @@ class Retriever:
                 concept_ids=m["concept_ids"],
                 grade=m["grade"],
                 subject=m["subject"],
-                source_pdf=m["source_pdf"],
+                source_pdf=m["source_pdf"],source_url=m.get("source_url"),source_pages=m.get("source_pages"),resource_kind=m.get("resource_kind","textbook_passage"),
                 chunk_index=m.get("chunk_index", -1),
                 score=float(score),
                 used_fallback=used_fallback,

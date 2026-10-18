@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { router } from 'expo-router';
+import { useState,useCallback } from 'react';
+import { router,useFocusEffect } from 'expo-router';
 import { View } from 'react-native';
 import { AppText } from './AppText';
 import { Button } from './Button';
@@ -9,11 +9,13 @@ import { FormStatus } from './FormStatus';
 import { Screen } from './Screen';
 import { colors } from '@/theme';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
-import { saveGeneralBlocks } from '@/services/generalScheduleService';
+import { saveGeneralBlocks,isScheduleOutdated } from '@/services/generalScheduleService';
 import type { GeneralSchedule,RotationBlock } from '@/types/generalSchedule';
 
 export function GeneralTimeline({schedule}:{schedule:GeneralSchedule}){
   const [blocks,setBlocks]=useState(schedule.blocks);const [baseline,setBaseline]=useState(JSON.stringify(schedule.blocks));
+  const [outdated,setOutdated]=useState(false);
+  useFocusEffect(useCallback(()=>{let active=true;void isScheduleOutdated(schedule).then(value=>{if(active)setOutdated(value);}).catch(()=>{});return()=>{active=false;};},[schedule]));
   const [editing,setEditing]=useState<string|null>(null);const [busy,setBusy]=useState(false);const [message,setMessage]=useState('');const [failed,setFailed]=useState(false);
   const dirty=JSON.stringify(blocks)!==baseline;useUnsavedChanges(dirty&&!busy);
   const update=(id:string,patch:Partial<RotationBlock>)=>setBlocks(previous=>previous.map(b=>b.id===id?{...b,...patch}:b));
@@ -21,6 +23,8 @@ export function GeneralTimeline({schedule}:{schedule:GeneralSchedule}){
   const total=blocks.reduce((sum,b)=>sum+b.durationMinutes,0);
   return <Screen topInset={false} footer={<View style={{flexDirection:'row',gap:8}}><Button label="Start active class" icon="play-circle-outline" variant="secondary" onPress={()=>router.push({pathname:'/active-session',params:{scheduleId:schedule.id}})} style={{flex:1}}/><Button label={busy?'Saving...':'Save changes'} disabled={busy||!dirty} onPress={()=>void save()} style={{flex:1}}/></View>}>
     <AppText variant="title">Classroom rotation</AppText><AppText muted>{schedule.selection.date} · Grades {schedule.selection.grades.join(', ')} · {schedule.selection.availableMinutes} min</AppText>
+    <AppText variant="small" muted>{schedule.engine==='observed-evidence'?'Classroom evidence planner. Generate a new plan after recording marks.':'Offline local heuristic. Based on records saved on this device.'}</AppText>
+    {outdated?<AppText style={{color:colors.attention}}>Classroom evidence has changed. Generate a new plan to use the latest records; your saved activities are retained.</AppText>:null}
     {schedule.warnings.map(w=><View key={w} style={{borderLeftWidth:3,borderColor:colors.attention,paddingLeft:12}}><AppText style={{color:colors.attention}}>{w}</AppText></View>)}
     <FormStatus message={message} error={failed}/>{dirty?<AppText variant="small" muted>Unsaved · {Number.isFinite(total)?total:'—'}/{schedule.selection.availableMinutes} min</AppText>:null}
     {blocks.map((block,index)=>{

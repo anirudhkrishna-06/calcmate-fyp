@@ -1,4 +1,6 @@
 import * as SQLite from "expo-sqlite";
+import { seedCanonicalCurriculum } from "./curriculumStore";
+import { rebuildWorkspaceStates } from "./learnerEstimator";
 
 export const migrations = [
   `CREATE TABLE workspaces (
@@ -148,6 +150,45 @@ export const migrations = [
    CREATE INDEX IF NOT EXISTS session_outcomes_session ON session_outcomes(workspace_id, session_id);`
 ];
 
+migrations.push(`CREATE TABLE students_v5 (
+    id TEXT NOT NULL, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    name TEXT NOT NULL, grade INTEGER NOT NULL CHECK(grade BETWEEN 1 AND 5), roll TEXT NOT NULL,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(workspace_id,id),
+    UNIQUE(workspace_id,grade,roll));
+INSERT INTO students_v5 SELECT * FROM students;
+DROP TABLE students;
+ALTER TABLE students_v5 RENAME TO students;
+CREATE TABLE concepts_v5 (
+    id TEXT NOT NULL, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    title TEXT NOT NULL, grade INTEGER NOT NULL CHECK(grade BETWEEN 1 AND 5), prerequisite_id TEXT,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    learning_objective TEXT,coverage_status TEXT NOT NULL DEFAULT 'pending',is_active INTEGER NOT NULL DEFAULT 1,subject_area TEXT NOT NULL DEFAULT 'Math',PRIMARY KEY(workspace_id,id),FOREIGN KEY(workspace_id,prerequisite_id) REFERENCES concepts(workspace_id,id));
+INSERT INTO concepts_v5 SELECT * FROM concepts;
+DROP TABLE concepts;
+ALTER TABLE concepts_v5 RENAME TO concepts;
+CREATE TABLE conversations_v5 (
+     id TEXT NOT NULL,workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+     title TEXT NOT NULL,grade INTEGER NOT NULL CHECK(grade BETWEEN 1 AND 5),
+     created_at TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(workspace_id,id));
+INSERT INTO conversations_v5 SELECT * FROM conversations;
+DROP TABLE conversations;
+ALTER TABLE conversations_v5 RENAME TO conversations;
+CREATE INDEX students_grade ON students(workspace_id,grade,name);
+CREATE TABLE assessment_origins(workspace_id TEXT NOT NULL,assessment_id TEXT NOT NULL,session_id TEXT NOT NULL,block_id TEXT NOT NULL,PRIMARY KEY(workspace_id,assessment_id),FOREIGN KEY(workspace_id,assessment_id) REFERENCES assessments(workspace_id,id) ON DELETE CASCADE,FOREIGN KEY(workspace_id,session_id) REFERENCES class_sessions(workspace_id,id) ON DELETE CASCADE);`);
+
+migrations.push(`CREATE TRIGGER evidence_students_insert AFTER INSERT ON students BEGIN INSERT INTO app_meta(key,value) VALUES('classroom.revision:'||NEW.workspace_id,'1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1; END;
+CREATE TRIGGER evidence_students_update AFTER UPDATE ON students BEGIN INSERT INTO app_meta(key,value) VALUES('classroom.revision:'||NEW.workspace_id,'1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1; END;
+CREATE TRIGGER evidence_students_delete AFTER DELETE ON students BEGIN INSERT INTO app_meta(key,value) VALUES('classroom.revision:'||OLD.workspace_id,'1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1; END;
+CREATE TRIGGER evidence_assessments_insert AFTER INSERT ON assessments BEGIN INSERT INTO app_meta(key,value) VALUES('classroom.revision:'||NEW.workspace_id,'1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1; END;
+CREATE TRIGGER evidence_assessments_update AFTER UPDATE ON assessments BEGIN INSERT INTO app_meta(key,value) VALUES('classroom.revision:'||NEW.workspace_id,'1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1; END;
+CREATE TRIGGER evidence_assessments_delete AFTER DELETE ON assessments BEGIN INSERT INTO app_meta(key,value) VALUES('classroom.revision:'||OLD.workspace_id,'1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1; END;
+CREATE TRIGGER evidence_attendance_insert AFTER INSERT ON attendance BEGIN INSERT INTO app_meta(key,value) VALUES('classroom.revision:'||NEW.workspace_id,'1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1; END;
+CREATE TRIGGER evidence_attendance_update AFTER UPDATE ON attendance BEGIN INSERT INTO app_meta(key,value) VALUES('classroom.revision:'||NEW.workspace_id,'1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1; END;
+CREATE TRIGGER evidence_attendance_delete AFTER DELETE ON attendance BEGIN INSERT INTO app_meta(key,value) VALUES('classroom.revision:'||OLD.workspace_id,'1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1; END;
+CREATE TRIGGER evidence_session_outcomes_insert AFTER INSERT ON session_outcomes BEGIN INSERT INTO app_meta(key,value) VALUES('classroom.revision:'||NEW.workspace_id,'1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1; END;
+CREATE TRIGGER evidence_session_outcomes_update AFTER UPDATE ON session_outcomes BEGIN INSERT INTO app_meta(key,value) VALUES('classroom.revision:'||NEW.workspace_id,'1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1; END;
+CREATE TRIGGER evidence_session_outcomes_delete AFTER DELETE ON session_outcomes BEGIN INSERT INTO app_meta(key,value) VALUES('classroom.revision:'||OLD.workspace_id,'1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1; END;`);
+
 let opening: Promise<SQLite.SQLiteDatabase> | undefined;
 export function getDatabase() {
   opening ??= (async () => {
@@ -160,20 +201,21 @@ export function getDatabase() {
         await tx.execAsync(migrations[i]);
         await tx.execAsync(`PRAGMA user_version=${i + 1}`);
       }
-    });
+      for(const w of await tx.getAllAsync<{id:string}>("SELECT id FROM workspaces")){await seedCanonicalCurriculum(tx,w.id);await rebuildWorkspaceStates(tx,w.id);}
+    }, true);
     return db;
   })().catch(error => { opening = undefined; throw error; });
   return opening;
 }
 
 let writes: Promise<unknown> = Promise.resolve();
-function transactionConnection<T>(task: (tx: SQLite.SQLiteDatabase) => Promise<T>): Promise<T> {
+function transactionConnection<T>(task: (tx: SQLite.SQLiteDatabase) => Promise<T>, schemaMigration = false): Promise<T> {
   const result = writes.then(async () => {
     const tx = await SQLite.openDatabaseAsync("calcmate.db", { useNewConnection: true });
     try {
       // Foreign keys are connection-local and must be enabled BEFORE beginning a transaction.
-      await tx.execAsync("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; BEGIN IMMEDIATE;");
-      try { const value = await task(tx); await tx.execAsync("COMMIT"); return value; }
+      await tx.execAsync(`PRAGMA foreign_keys=${schemaMigration ? "OFF" : "ON"}; PRAGMA busy_timeout=5000; BEGIN IMMEDIATE;`);
+      try { const value = await task(tx); if(schemaMigration && (await tx.getAllAsync("PRAGMA foreign_key_check")).length)throw new Error("Database migration has invalid references."); await tx.execAsync("COMMIT"); return value; }
       catch (error) { await tx.execAsync("ROLLBACK"); throw error; }
     } finally { await tx.closeAsync(); }
   });
@@ -316,7 +358,7 @@ function validateRecord(table: keyof Records, input: Record<string, unknown>) {
     if (value === undefined || value === null || (typeof value === "number" && !Number.isFinite(value))) throw new Error(`Invalid ${key}.`);
   }
   if (table === "students" && (String(input.name).length > 100 || String(input.roll).length > 12)) throw new Error("Student name or roll number is too long.");
-  if ("grade" in input && ![1,2,3,4].includes(Number(input.grade))) throw new Error("Invalid grade.");
+  if ("grade" in input && ![1,2,3,4,5].includes(Number(input.grade))) throw new Error("Invalid grade.");
   if ("date" in input && (!/^\d{4}-\d{2}-\d{2}$/.test(String(input.date)) || !Number.isFinite(Date.parse(String(input.date))) || new Date(String(input.date)).toISOString().slice(0,10) !== input.date || String(input.date) > today())) throw new Error("Invalid date.");
   if ("data" in input) { try { JSON.parse(String(input.data)); } catch { throw new Error("Invalid record data."); } }
 }

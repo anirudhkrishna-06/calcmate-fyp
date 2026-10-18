@@ -1,3 +1,4 @@
+import { readClassroomEvidence } from "./classroomEvidenceService";
 import NetInfo from "@react-native-community/netinfo";
 import { ChatRequest, RagChunk, RagResponse } from "@/types/chat";
 import { apiBaseUrl } from "./apiClient";
@@ -16,7 +17,7 @@ export function validateRagResponse(value:unknown):RagResponse {
   let schedule_action: RagResponse["schedule_action"] = null;
   const sd = response.structured_data;
   if (sd && sd["action"] === "invoke_local_scheduler") {
-    const grades = Array.isArray(sd["suggested_grades"]) ? (sd["suggested_grades"] as number[]).filter(g => Number.isInteger(g) && g >= 1 && g <= 4) : [];
+    const grades = Array.isArray(sd["suggested_grades"]) ? (sd["suggested_grades"] as number[]).filter(g => Number.isInteger(g) && g >= 1 && g <= 5) : [];
     const mins = typeof sd["available_minutes"] === "number" ? sd["available_minutes"] : 45;
     const pri = sd["priority"] === "learning-needs" ? "learning-needs" : "balanced";
     const dt = typeof sd["date"] === "string" ? sd["date"] : new Date().toISOString().slice(0, 10);
@@ -29,6 +30,7 @@ export function validateRagResponse(value:unknown):RagResponse {
     answer: response.answer,
     chunks: response.chunks,
     mode: response.mode,
+    evidence_revision: response.evidence_revision,
     intent: response.intent,
     evidence_found: response.evidence_found ?? null,
     graph_finding: response.graph_finding ?? null,
@@ -45,11 +47,19 @@ export async function requestRag(request:ChatRequest, timeoutMs=90000):Promise<R
   const base=apiBaseUrl();
   if (!base) throw new Error("AI responses are unavailable: no API address is configured. Your question is saved on this device.");
   const session=await getSession();
+  if(request.workspace_id&&request.workspace_id!==session?.workspaceId)throw new Error('Account changed. Reopen Assistant before retrying.');
+  const outgoing={...request};
+  if(session?.mode==='real'){
+    outgoing.workspace_id=session.workspaceId;
+    outgoing.classroom_evidence=await readClassroomEvidence([...new Set([request.grade,...(session.profile?.grades??[])])]);
+  }else{delete outgoing.workspace_id;delete outgoing.student_id;delete outgoing.classroom_evidence;}
+  const current=await getSession();
+  if(current?.workspaceId!==session?.workspaceId||current?.token!==session?.token)throw new Error('Account changed. Reopen Assistant before retrying.');
   const controller=new AbortController(); const timer=setTimeout(() => controller.abort(),timeoutMs);
-  const unsubscribe=subscribeSession(next=>{if(!next || next.workspaceId!==session?.workspaceId)controller.abort();});
+  const unsubscribe=subscribeSession(next=>{if(!next || next.workspaceId!==session?.workspaceId || next.token!==session?.token)controller.abort();});
   try {
     let response:Response;
-    try { response=await fetch(`${base}/chat`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(request),signal:controller.signal}); }
+    try { response=await fetch(`${base}/chat`,{method:"POST",headers:{"Content-Type":"application/json",...(session?.token?{Authorization:`Bearer ${session.token}`}:{})},body:JSON.stringify(outgoing),signal:controller.signal}); }
     catch {
       if (controller.signal.aborted) throw new Error("The AI request timed out. Your question is saved; retry when ready.");
       throw new Error("Cannot reach the AI service. Your question is saved; check the network and device API address.");
@@ -60,7 +70,12 @@ export async function requestRag(request:ChatRequest, timeoutMs=90000):Promise<R
         try {const data=await response.json();if(typeof data.detail==="string")detail=data.detail;}catch { /* Keep the readable default. */ }
         throw new Error(`${detail} Your question is saved for retry.`);
       }
-      if (response.status === 422) throw new Error("The AI service rejected this question or grade.");
+      if(response.status===401||response.status===403)throw new Error("Your classroom session is no longer valid. Log in again; your question is saved.");
+      if (response.status === 422) {
+        let detail='The AI service rejected this question or grade.';
+        try{const data=await response.json();if(typeof data.detail==='string')detail=data.detail;}catch{/* Keep the readable default. */}
+        throw new Error(detail);
+      }
       throw new Error(`The AI service returned HTTP ${response.status}. Your question is saved for retry.`);
     }
     let result:unknown;

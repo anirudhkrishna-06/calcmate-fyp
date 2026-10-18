@@ -1,3 +1,4 @@
+import { computeMasteryEstimate } from "./learnerEstimator";
 import { ScheduleItem } from "@/types/domain";
 import { Lesson,PlanningPayload, PlanningSelection, SavedPlan, SchedulingEngine } from "@/types/planning";
 import { assertScope, withTransaction, StudentRecord, AttendanceRecord, AssessmentRecord, CompetencyRecord, ConceptRecord, newId } from "./database";
@@ -15,7 +16,13 @@ export async function readPlanningPayload(selection:PlanningSelection):Promise<P
     const students = await tx.getAllAsync<StudentRecord>("SELECT * FROM students WHERE workspace_id=? AND grade=? ORDER BY id",w,selection.grade);
     const attendance = await tx.getAllAsync<AttendanceRecord>("SELECT a.* FROM attendance a JOIN students s ON s.workspace_id=a.workspace_id AND s.id=a.student_id WHERE a.workspace_id=? AND s.grade=? AND a.date<=? ORDER BY a.date,a.id",w,selection.grade,selection.date);
     const assessments = await tx.getAllAsync<AssessmentRecord>("SELECT a.* FROM assessments a JOIN students s ON s.workspace_id=a.workspace_id AND s.id=a.student_id WHERE a.workspace_id=? AND s.grade=? AND a.date<=? ORDER BY a.date,a.id",w,selection.grade,selection.date);
-    const competencies = await tx.getAllAsync<CompetencyRecord>("SELECT c.* FROM competencies c JOIN students s ON s.workspace_id=c.workspace_id AND s.id=c.student_id WHERE c.workspace_id=? AND s.grade=? AND c.updated_at<=? ORDER BY c.id",w,selection.grade,cutoff);
+    let competencies = await tx.getAllAsync<CompetencyRecord>("SELECT c.* FROM competencies c JOIN students s ON s.workspace_id=c.workspace_id AND s.id=c.student_id WHERE c.workspace_id=? AND s.grade=? AND c.updated_at<=? ORDER BY c.id",w,selection.grade,cutoff);
+    // Reconstruct every planning estimate from evidence at the selected date.
+    competencies=[];
+    for(const student of students)for(const concept of new Set(assessments.filter(a=>a.student_id===student.id).map(a=>a.concept_id))){
+      const rows=assessments.filter(a=>a.student_id===student.id&&a.concept_id===concept),r=computeMasteryEstimate(rows);
+      if(r.mastery_estimate!==null)competencies.push({id:`planning-${student.id}-${concept}`,workspace_id:w,student_id:student.id,concept_id:concept,mastery:r.mastery_estimate,created_at:rows[0].created_at,updated_at:rows[0].updated_at});
+    }
     const concepts = await tx.getAllAsync<ConceptRecord>("SELECT * FROM concepts WHERE workspace_id=? ORDER BY id",w);
     const edgeRows = await tx.getAllAsync<{ concept_id:string; prerequisite_id:string }>("SELECT concept_id,prerequisite_id FROM concept_prerequisites WHERE workspace_id=?",w);
     const edgeMap = new Map<string,string[]>();
@@ -24,7 +31,8 @@ export async function readPlanningPayload(selection:PlanningSelection):Promise<P
       const edges = edgeMap.get(concept.id);
       if (edges?.length) concept.prerequisite_ids = edges;
     }
-    return {version:1,workspaceId:w,teacherId:session.teacherId,selection:{...selection},students,attendance,assessments,competencies,concepts};
+    const localRevision=Number((await tx.getFirstAsync<{value:string}>("SELECT value FROM app_meta WHERE key=?",`classroom.revision:${w}`))?.value??0);
+    return {version:1,localRevision,workspaceId:w,teacherId:session.teacherId,selection:{...selection},students,attendance,assessments,competencies,concepts};
   });
 }
 export async function generateSchedule(payload:PlanningPayload, engine:SchedulingEngine = mockSchedulingEngine):Promise<SavedPlan> {

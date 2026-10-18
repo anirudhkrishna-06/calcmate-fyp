@@ -1,5 +1,7 @@
 # CalcMate teammate and presentation guide
 
+See [current implementation and validation](app-improvement-validation.md) for the seven improvement packages, real HTTP checks, Grade 1-2 coverage limits, and pending device walkthrough.
+
 ## First setup on Windows
 
 Clone the repository, install Python 3.11, Node compatible with Expo SDK 57, and Android tooling or an SDK-compatible Expo Go installation. Run these commands from the repository root:
@@ -26,7 +28,7 @@ Keep Ollama running while using generated Assistant answers. The register, atten
 
 ## App features and roles
 
-The teacher app supports Maths for Grades 1–4, with one teacher managing multiple grades. Home provides a grade selector, daily attendance/marks actions, students needing revision, upcoming schedules/plans and logout. Classroom contains the searchable student register, enrollment/editing, student notes/history, class attendance with Present/Absent/Late and undo, bulk marks and concept progress. Planner separates deterministic offline multigrade rotations from the existing labelled mock lesson planner; both support saved edits and completion states. Assistant supports Markdown/maths, source excerpts, saved conversations and failed-request retries. Settings exposes server connection, profile/teaching grades, storage summary and backup/restore.
+The teacher app supports Maths for Grades 1-5, with one teacher managing multiple grades. Home provides a grade selector, daily attendance/marks actions, students needing revision, upcoming schedules/plans and logout. Classroom contains the searchable student register, enrollment/editing, student notes/history, class attendance with Present/Absent/Late and undo, bulk marks and concept progress. Planner separates observed-evidence multigrade rotations with a local offline fallback from the existing labelled mock lesson planner; both support saved edits and completion states. Assistant supports Markdown/maths, source excerpts, saved conversations and failed-request retries. Settings exposes server connection, profile/teaching grades, storage summary and backup/restore.
 
 Teachers manage classroom records on their phone. Administrators use the computer's protected `/admin` inbox to review, approve or reject account requests; bulk approval is available. Administrators do not have a central dashboard of student marks or attendance. There is no student login role. Demo is an explicitly selected separate workspace, not an authentication bypass for real accounts.
 
@@ -39,11 +41,11 @@ Teachers manage classroom records on their phone. Administrators use the compute
 | Phone Expo SecureStore | Account session/token and expiry, saved server address, pending signup email, approval-tracking receipt and pending logout revocations |
 | Computer backend SQLite `data/auth.sqlite3` | Account email/profile, salted password hash, approval/disabled state, hashed session tokens/expiry, rate-limit attempts, signup timestamps and hashed approval receipts |
 | Computer RAG files | Textbook index/metadata, model cache and retrieval/generation logs |
-| Teacher-selected backup folder | Workspace JSON backup of classroom records and chats; no account passwords or session tokens; unsaved drafts are excluded |
+| Teacher-selected backup folder | Workspace JSON backup of classroom records, curriculum relationships, class sessions, exit-assessment links and chats; derived learner states are rebuilt; no account passwords or session tokens; unsaved drafts are excluded |
 
 SQLite is the phone's local storage for classroom data; it is not a second cloud copy. Expo SecureStore is separate credential storage. Plaintext teacher passwords are not persisted on the phone or server. Logging out clears the active session but keeps classroom records behind the login gate. An unexpired approved session can reopen local records offline for up to the issued 24-hour window. New signup/login, approval checks and new Assistant answers need the server. Uninstalling or clearing app storage can remove phone records: make a backup first.
 
-Classroom data is not automatically synchronized between phones or sent to the administrator. Git transfers code and tracked project assets, not phone data or accounts. A teammate signs up against their server and gets their own workspace; backups currently restore only to the matching unlocked workspace. The RAG service receives the submitted question and grade; chat history and student records are not automatically attached. General scheduling is local; knowledge-graph UI stays hidden.
+Classroom data is not automatically synchronized between phones or sent to the administrator. Git transfers code and tracked project assets, not phone data or accounts. A teammate signs up against their server and gets their own workspace; backups currently restore only to the matching unlocked workspace. Contextual Assistant requests send a bounded snapshot of relevant student names, assessments and attendance from the local workspace; chat history, unrelated notes and credentials are excluded. Python reasons over an isolated in-memory snapshot. Online general scheduling uses the same authenticated evidence service; offline/demo schedules use a labeled local heuristic. Curriculum graph screens show student or group evidence and prerequisite details.
 
 ## Start the presentation
 
@@ -68,7 +70,7 @@ The script enables insecure authentication only for trusted LAN presentation use
 3. Choose **Create teacher account**. Use an address such as `presentation.teacher@example.com` and choose a unique password of at least 8 characters including letters and numbers. No presentation password is committed to Git.
 4. On the computer open the printed `/admin` URL. Log in with `admin123`, or the configured `CALCMATE_ADMIN_PASSWORD`. Requests include teacher name, email, school, grades and request time. Search, approve one teacher, or select several and choose **Approve selected**. Use the Pending/Approved/Rejected/All requests selector to see stored request history after login. Rejection requires confirmation.
 5. The teacher's waiting screen checks every ten seconds while visible and in the foreground. When approved, choose **Log in** and enter the password. Approval tracking alone cannot unlock records. New signups receive a seven-day tracking receipt held in SecureStore; expired tracking or older accounts use ordinary login to check approval.
-6. Presentation accounts receive the existing 32 fictional students unless `CALCMATE_PRESENTATION_ROSTER=false`. Further enrollments and edits persist. **Explore demo** is a separate explicit workspace; it never replaces a failed login. There is no new destructive reset command.
+6. Presentation accounts receive 40 fictional Indian students, eight per grade across Grades 1-5, unless `CALCMATE_PRESENTATION_ROSTER=false`. Existing presentation workspaces add Grade 5 once at login or online session refresh; existing demos do so on reopening. Further enrollments, edits and deletions persist. **Explore demo** is a separate explicit workspace; it never replaces a failed login. There is no new destructive reset command.
 
 ## Five-minute professor walkthrough
 
@@ -98,7 +100,8 @@ General schedules and lesson plans have separate JSON record kinds in the existi
 ## Validation before Git handover
 
 ```powershell
-.\venv\Scripts\python.exe -m unittest discover -s tests -v
+.\venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\venv\Scripts\python.exe -m pytest -q tests
 cd frontend
 npm.cmd run typecheck
 npm.cmd run lint
@@ -115,4 +118,4 @@ Copy `frontend/.env.example` to `.env` only if starting Expo manually. Environme
 
 Remaining limits: no cloud server, email notifications, school invitation links or QR-based API configuration were added. The startup QR opens Expo; API connection is manual once per device. Native keyboard and layout acceptance require a connected phone. The admin page remains protected by the existing operator code (`admin123` by default) rather than introducing a second account system.
 
-Validation during implementation: TypeScript and ESLint passed; database, 1,904 scheduling cases, workspace/chat interactions and admin-script interactions passed. Backend suite ran 20 tests with two optional model tests skipped; a separate live HTTP test exercised approval tracking, login, roster and actual Ollama RAG. Android production export passed. Startup was checked without launching processes and smoke-tested with a real API plus an adapted Expo launcher, including API cleanup. Full phone/QR acceptance remains manual.
+Earlier presentation validation (superseded by [the improvement validation report](app-improvement-validation.md)): TypeScript and ESLint passed; database, 1,904 scheduling cases, workspace/chat interactions and admin-script interactions passed. Backend suite ran 20 tests with two optional model tests skipped; a separate live HTTP test exercised approval tracking, login, roster and actual Ollama RAG. Android production export passed. Startup was checked without launching processes and smoke-tested with a real API plus an adapted Expo launcher, including API cleanup. Full phone/QR acceptance remains manual.

@@ -3,7 +3,17 @@ const React=require('react');const {create,act}=require('react-test-renderer');g
 let session=null,listener,alert,available=true,approved=false,signupCount=0,savedAttendance,savedMarks,savedLessons,savedRotation,createdSelection,restored=false,selectedGrade=1,preventDirty=false,preventCallback;
 let approvalStatus='pending';
 let testSession={id:'sess1',workspace_id:'demo',schedule_id:'g1',grade:1,date:'2026-10-10',started_at:'2026-10-10T09:00:00Z',ended_at:null,status:'active',current_block_index:0,elapsed_seconds:60,created_at:'2026-10-10T09:00:00Z',updated_at:'2026-10-10T09:00:00Z'};
-let savedOutcomes=null, recordedEvents=[];
+let savedOutcomes=null, recordedEvents=[], progressCalls=[], progressFailure=null, pendingProgress=null;
+let restoreClock=()=>{};
+function fakeClock(){
+  const originalNow=Date.now,originalSetInterval=global.setInterval,originalClearInterval=global.clearInterval;
+  let now=Date.parse(testSession.updated_at),nextId=0;const timers=new Map();
+  Date.now=()=>now;
+  global.setInterval=(callback,delay)=>{const id=++nextId;timers.set(id,{callback,delay,next:now+delay});return id;};
+  global.clearInterval=id=>timers.delete(id);
+  restoreClock=()=>{Date.now=originalNow;global.setInterval=originalSetInterval;global.clearInterval=originalClearInterval;};
+  return {timers,async advance(seconds){for(let i=0;i<seconds;i++){now+=1000;await act(async()=>{for(const [id,timer] of [...timers]){if(timers.has(id)&&timer.next<=now){timer.next+=timer.delay;timer.callback();}}});}}};
+}
 const gradeListeners=new Set();const draftStore=new Map();
 class ApiError extends Error {constructor(message,status,code){super(message);this.status=status;this.code=code;}}
 const routes=[];const teacher={id:'t1',name:'Teacher Rao',schoolName:'School',grades:[1,2],experience:3,preferredSubject:'Math'};
@@ -23,7 +33,8 @@ const native={Keyboard:{dismiss(){}},Platform:{OS:'android'},StyleSheet:{create:
 function Stack(props){return React.createElement('Stack',null,props.children);}
 Stack.Screen=props=>React.createElement('Route',props);Stack.Protected=props=>props.guard?props.children:null;
 const router={replace:route=>routes.push(route),push:route=>routes.push(route),back(){},setParams(){}};
-const expo={router,Stack,useLocalSearchParams:()=>({grade:'1'}),useFocusEffect:callback=>React.useEffect(callback,[callback]),
+const FocusContext=React.createContext(true);
+const expo={router,Stack,useLocalSearchParams:()=>({grade:'1'}),useFocusEffect:callback=>{const focused=React.useContext(FocusContext);React.useEffect(()=>focused?callback():undefined,[focused,callback]);},
   Link:props=>props.asChild?React.cloneElement(props.children,{onPress:()=>router.push(props.href)}):React.createElement('Link',{...props,onPress:()=>router.push(props.href)},props.children)};
 const plan={id:'p1',kind:'lesson-plan',version:1,label:'DEMO/MOCK',engine:'mock-v1',createdAt:'2026-10-10',selection:{grade:1,date:'2026-10-10',availableMinutes:30},summary:{missing:[]},payload:{students:[{id:'s1',name:'Aarav'}]},lessons:[{order:1,title:'Counting practice',durationMinutes:20,objective:'Count objects',activities:['Use counters'],reasons:['Recorded weak concept'],studentIds:['s1']},{order:2,title:'Exit check',durationMinutes:10,objective:'Check understanding',activities:['Ask a short question'],reasons:['Collect evidence'],studentIds:['s1']}]};
 const general={id:'g1',kind:'general-schedule',version:1,selection:{date:'2026-10-10',grades:[1,2],availableMinutes:90,priority:'balanced'},warnings:[],blocks:[{id:'b1',kind:'instruction',durationMinutes:90,teacherGrade:1,teacherActivity:'Model counting',reason:'Readiness check',status:'planned',activities:[{grade:1,concept:'Counting',objective:'Count objects',activity:'Use counters with teacher'},{grade:2,concept:'Place value',objective:'Read tens and ones',activity:'Pair practice'}]}]};
@@ -40,19 +51,19 @@ Module._load=function(request,parent,isMain){
   if(request==='@/services/apiClient')return {ApiError,apiBaseUrl:()=> 'https://school.test',loadApiConfiguration:async()=>{},accountAvailability:async()=>available};
   if(request==='@/services/database')return {today:()=> '2026-10-10',getDatabase:async()=>({getFirstAsync:async(sql,key)=>draftStore.has(key)?{value:draftStore.get(key)}:null,runAsync:async(sql,key,value)=>{draftStore.set(key,value);}})};
   if(request==='@/services/storageService')return {loadTeacher:async()=>teacher,storageSummary:async()=>({students:2,assessments:2,plans:1}),loadStudents:async search=>students.filter(s=>!search||s.name.includes(search)||s.rollNumber.includes(search)),saveClassAssessments:async value=>{savedMarks=value;return value.entries.length;}};
-  if(request==='@/services/generalScheduleService')return {listGeneralSchedules:async()=>[general],loadGeneralSchedule:async()=>general,createGeneralSchedule:async selection=>{createdSelection=selection;return general;},saveGeneralBlocks:async(id,blocks)=>{savedRotation=blocks;general.blocks=blocks;return general;}};
+  if(request==='@/services/generalScheduleService')return {isScheduleOutdated:async()=>false,listGeneralSchedules:async()=>[general],loadGeneralSchedule:async()=>general,createGeneralSchedule:async selection=>{createdSelection=selection;return general;},saveGeneralBlocks:async(id,blocks)=>{savedRotation=blocks;general.blocks=blocks;return general;}};
   if(request==='@/services/sessionService')return {
-    effectiveElapsedSeconds:session=>session.elapsed_seconds,
+    effectiveElapsedSeconds:session=>session.elapsed_seconds+(session.status==='active'?Math.max(0,Math.floor((Date.now()-Date.parse(session.updated_at))/1000)):0),
     startClassSession:async()=>testSession,
-    getActiveSession:async()=>testSession,
-    getSessionById:async()=>testSession,
-    updateSessionProgress:async(id,idx,sec)=>{testSession.current_block_index=idx;testSession.elapsed_seconds=sec;},
-    pauseClassSession:async()=>{testSession.status='paused';},
-    resumeClassSession:async()=>{testSession.status='active';},
+    getActiveSession:async()=>testSession.status==='completed'?null:{...testSession},
+    getSessionById:async()=>({...testSession}),
+    updateSessionProgress:async(id,idx,sec)=>{progressCalls.push({id,idx,sec});if(pendingProgress)await pendingProgress;if(progressFailure)throw progressFailure;if(testSession.status==='completed')throw Error('Completed sessions cannot be changed.');Object.assign(testSession,{current_block_index:idx,elapsed_seconds:sec,updated_at:new Date(Date.now()).toISOString()});},
+    pauseClassSession:async(id,seconds)=>{Object.assign(testSession,{status:'paused',elapsed_seconds:seconds,updated_at:new Date(Date.now()).toISOString()});},
+    resumeClassSession:async()=>{Object.assign(testSession,{status:'active',updated_at:new Date(Date.now()).toISOString()});},
     completeClassSession:async()=>{testSession.status='completed';return testSession;},
     recordSessionAttendanceEvent:async(sid,stId,ev)=>{const rec={id:'ev1',session_id:sid,student_id:stId,event_type:ev,recorded_at:'2026-10-10T09:10:00Z'};recordedEvents.push(rec);return rec;},
     getSessionAttendanceEvents:async()=>recordedEvents,
-    saveSessionOutcomes:async(sid,outcomes,focus,obs)=>{savedOutcomes={sid,outcomes,focus,obs};},
+    saveSessionOutcomes:async(sid,outcomes,focus,obs,exit,conclude)=>{savedOutcomes={sid,outcomes,focus,obs};if(conclude)testSession.status='completed';},
     getSessionOutcomes:async()=>[]
   };
   if(request==='@/services/classroomService')return {
@@ -77,8 +88,9 @@ Module._load=function(request,parent,isMain){
   const mod=new Module(resolved,parent);mod.filename=resolved;mod.paths=Module._nodeModulePaths(path.dirname(resolved));cache.set(resolved,mod);
   mod._compile(ts.transpileModule(fs.readFileSync(resolved,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText,resolved);return mod.exports;
 };
-let renderer;
-async function mount(route){if(renderer)await act(async()=>renderer.unmount());await act(async()=>{renderer=create(React.createElement(require(route).default));});return renderer.root;}
+let renderer,renderedScreen;
+async function mount(route){if(renderer)await act(async()=>renderer.unmount());renderedScreen=React.createElement(require(route).default);await act(async()=>{renderer=create(React.createElement(FocusContext.Provider,{value:true},renderedScreen));});return renderer.root;}
+async function setFocused(focused){await act(async()=>renderer.update(React.createElement(FocusContext.Provider,{value:focused},renderedScreen)));}
 const text=root=>root.findAllByType('Text').map(n=>String(n.props.children)).join('\n');
 function button(root,label){return root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>t.props.children===label));}
 async function input(root,label,value){await act(async()=>root.findByProps({accessibilityLabel:label}).props.onChangeText(value));}
@@ -129,13 +141,20 @@ async function run(){
   assert.equal(routes.at(-1)?.pathname || routes.at(-1),'/active-session');
 
   // FE-002 / ACC-13, FE-007: Active session execution & mid-class attendance
+  const clock=fakeClock();
+  expo.useLocalSearchParams=()=>({grade:'1',sessionId:'sess1'});
   root=await mount('../app/active-session');
   assert.ok(text(root).includes('Active Class Execution'));
   assert.ok(text(root).includes('Block 1 of 1'));
   assert.ok(button(root,'Pause'));
+  await clock.advance(10);assert.equal(progressCalls.length,1);assert.equal(progressCalls[0].sec,70);
+  await setFocused(false);assert.equal(clock.timers.size,0,'A retained, unfocused screen must stop syncing.');
+  await clock.advance(30);assert.equal(progressCalls.length,1);
+  await setFocused(true);assert.ok(text(root).includes('01:40'),'Returning to an active session restores elapsed wall time.');
   await act(async()=>button(root,'Pause').props.onPress());
   assert.equal(testSession.status,'paused');
   assert.ok(button(root,'Resume'));
+  await clock.advance(20);assert.equal(progressCalls.length,1);assert.equal(clock.timers.size,0);
   await act(async()=>button(root,'Resume').props.onPress());
   assert.equal(testSession.status,'active');
   assert.ok(button(root,'Attendance note'));
@@ -145,6 +164,32 @@ async function run(){
   assert.equal(recordedEvents.length,1);
   assert.equal(recordedEvents[0].event_type,'left');
   await act(async()=>button(root,'Close').props.onPress());
+
+  // Block writes must report failures without advancing the displayed block.
+  general.blocks.push({...general.blocks[0],id:'b2'});
+  progressFailure=Error('Progress storage unavailable.');
+  await act(async()=>button(root,'Next \u2192').props.onPress());
+  assert.ok(text(root).includes('Progress storage unavailable.'));assert.ok(text(root).includes('Block 1 of 2'));
+  progressFailure=null;
+  await act(async()=>button(root,'Next \u2192').props.onPress());assert.ok(text(root).includes('Block 2 of 2'));
+  await act(async()=>button(root,'\u2190 Prev').props.onPress());assert.ok(text(root).includes('Block 1 of 2'));
+  general.blocks.pop();
+
+  // A rejected periodic save is handled and refreshes persisted session state.
+  progressFailure=Error('Unable to save class progress.');
+  await clock.advance(10);assert.ok(text(root).includes('Unable to save class progress.'));
+  progressFailure=null;
+  let releaseProgress;
+  pendingProgress=new Promise(resolve=>{releaseProgress=resolve;});
+  const beforePending=progressCalls.length;
+  await clock.advance(10);assert.equal(progressCalls.length,beforePending+1);
+  await clock.advance(20);assert.equal(progressCalls.length,beforePending+1,'Only one progress save may be in flight.');
+  await act(async()=>button(root,'End & Review').props.onPress());
+  await act(async()=>alert.buttons.find(b=>b.text==='Proceed to Review').onPress());
+  assert.equal(routes.at(-1).pathname,'/post-class-review');
+  await setFocused(false);assert.equal(clock.timers.size,0,'Blur must stop the timer without unmounting.');
+  await clock.advance(30);assert.equal(progressCalls.length,beforePending+1);
+  const activeRenderer=renderer,activeScreen=renderedScreen;renderer=null;
 
   // FE-006 / ACC-14: Post-class review, delivery confirmation, focus students, observations
   root=await mount('../app/post-class-review');
@@ -159,7 +204,23 @@ async function run(){
   assert.ok(savedOutcomes);
   assert.equal(savedOutcomes.focus[0],'s1');
   assert.equal(savedOutcomes.obs,'Students excelled with group work.');
-  assert.ok(text(root).includes('Review Saved!'));
+  assert.ok(text(root).includes('Review Saved!'));assert.ok(button(root,'Plan next class'));
+  assert.equal(testSession.status,'completed');
+  // Completion can win a race with a save started before blur. Its rejection
+  // must be consumed, and returning to the retained screen must stay read-only.
+  await act(async()=>{releaseProgress();await pendingProgress;});pendingProgress=null;
+  await act(async()=>renderer.unmount());renderer=activeRenderer;renderedScreen=activeScreen;
+  await setFocused(true);root=renderer.root;
+  assert.equal(button(root,'Completed').props.disabled,true);
+  assert.equal(button(root,'Attendance note').props.disabled,true);
+  assert.equal(button(root,'Next \u2192').props.disabled,true);
+  assert.equal(button(root,'\u2190 Prev').props.disabled,true);
+  assert.ok(button(root,'View class review'));assert.equal(clock.timers.size,0);
+  const afterReview=progressCalls.length;
+  await clock.advance(60);assert.equal(progressCalls.length,afterReview,'Completed sessions must never schedule further writes.');
+  assert.ok(!text(root).includes('Completed sessions cannot be changed.'));
+  console.log('PASS: active-session focus cleanup, elapsed-time recovery, pause/resume, handled progress/block errors, completion racing an in-flight save, and read-only return after review.');
+  restoreClock();expo.useLocalSearchParams=()=>({grade:'1'});
   root=await mount('../app/schedule/generated');await act(async()=>button(root,'Review learning needs').props.onPress());assert.ok(button(root,'Generate plan'));assert.equal(button(root,'Advanced / developer details'),undefined);assert.ok(!text(root).includes('workspaceId'));
   await act(async()=>button(root,'Generate plan').props.onPress());assert.equal(routes.at(-1),'/schedule/p1');
   root=await mount('../app/schedule/[id]');assert.ok(!text(root).includes('developer details'));await act(async()=>button(root,'Edit activity').props.onPress());await input(root,'Activity title','Teacher edited practice');
@@ -185,4 +246,4 @@ async function run(){
   await act(async()=>renderer.unmount());Module._load=originalLoad;
   console.log('PASS: screen interactions with bridge/service mocks: auth guards, signup/approval/login, Home logout/session lock, visible top server connection, navigation buttons, attendance/undo/save, marks/draft recovery, Classroom progress, Planner actions and multigrade generation, timeline edits/status/save, existing lesson edits and recovery confirmation. Device layout remains unverified.');
 }
-run().catch(error=>{Module._load=originalLoad;console.error(error);process.exitCode=1;});
+run().catch(error=>{restoreClock();Module._load=originalLoad;console.error(error);process.exitCode=1;});

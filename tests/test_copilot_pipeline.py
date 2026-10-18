@@ -15,6 +15,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+from evidence_helpers import AuthenticatedEvidenceClient
 
 from src.copilot_contract import (
     CopilotIntent,
@@ -116,7 +117,7 @@ class CopilotPipelineTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_path = Path(self.temp_dir.name) / "test_calcmate.db"
         _setup_copilot_test_db(self.db_path)
-        self.client = TestClient(app)
+        self.client = AuthenticatedEvidenceClient(app,self.db_path)
 
     def tearDown(self):
         self.client.close()

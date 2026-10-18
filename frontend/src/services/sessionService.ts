@@ -1,3 +1,5 @@
+import { persistLearnerState } from "./learnerEstimator";
+import { validateDate } from "./storageService";
 import { assertScope, withTransaction, newId, today, ClassSessionRecord, SessionAttendanceEventRecord, SessionOutcomeRecord } from "./database";
 import { requireSession } from "./authService";
 
@@ -190,15 +192,34 @@ export async function saveSessionOutcomes(
   sessionId: string,
   outcomes: { blockId: string; delivered: boolean; notes?: string }[],
   studentFocusIds?: string[],
-  overallObservation?: string
+  overallObservation?: string,
+  exitAssessments:{studentId:string;conceptId:string;score:number;maximum:number;blockId:string}[]=[],
+  conclude=false
 ): Promise<void> {
   const session = await requireSession();
   const now = new Date().toISOString();
   await withTransaction(async tx => {
     await assertScope(tx, session);
-    const current = await tx.getFirstAsync<ClassSessionRecord>("SELECT id,status FROM class_sessions WHERE workspace_id=? AND id=?",session.workspaceId,sessionId);
+    const current = await tx.getFirstAsync<ClassSessionRecord>("SELECT * FROM class_sessions WHERE workspace_id=? AND id=?",session.workspaceId,sessionId);
     if (!current) throw new Error("Session not found.");
+    if(overallObservation&&overallObservation.length>2000)throw new Error('Keep observations within 2000 characters.');
+    const scheduleRow=current.schedule_id?await tx.getFirstAsync<{data:string}>('SELECT data FROM schedules WHERE workspace_id=? AND id=?',session.workspaceId,current.schedule_id):null;
+    const schedule=scheduleRow?JSON.parse(scheduleRow.data):null;
+    if(new Set(outcomes.map(o=>o.blockId)).size!==outcomes.length)throw new Error('Duplicate teaching outcome.');
+    for(const e of exitAssessments){
+      if(!Number.isFinite(e.score)||!Number.isFinite(e.maximum)||e.maximum<=0||e.score<0||e.score>e.maximum)throw new Error('Exit marks must be between zero and the maximum.');
+      const student=await tx.getFirstAsync<{grade:number}>('SELECT grade FROM students WHERE workspace_id=? AND id=?',session.workspaceId,e.studentId);
+      const concept=await tx.getFirstAsync<{grade:number}>('SELECT grade FROM concepts WHERE workspace_id=? AND id=?',session.workspaceId,e.conceptId);
+      if(!student||!concept||concept.grade>student.grade)throw new Error('Choose a student and an appropriate concept in this workspace.');
+      if(schedule&&!schedule.blocks.some((b:{id:string;activities:{grade:number;conceptId:string}[]})=>b.id===e.blockId&&b.activities.some(a=>a.grade===student.grade&&a.conceptId===e.conceptId)))throw new Error('Exit assessment does not match the selected teaching block.');
+      validateDate(current.date);
+      const id=`exit-${sessionId}-${e.studentId}-${e.conceptId}-${e.blockId}`;
+      await tx.runAsync(`INSERT INTO assessments VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(workspace_id,id) DO UPDATE SET score=excluded.score,maximum=excluded.maximum,updated_at=excluded.updated_at`,id,session.workspaceId,e.studentId,e.conceptId,current.date,e.score,e.maximum,now,now);
+      await tx.runAsync('INSERT OR IGNORE INTO assessment_origins VALUES(?,?,?,?)',session.workspaceId,id,sessionId,e.blockId);
+      await persistLearnerState(tx,session.workspaceId,e.studentId,e.conceptId);
+    }
     for (const outcome of outcomes) {
+      if(schedule&&!schedule.blocks.some((b:{id:string})=>b.id===outcome.blockId))throw new Error('Teaching outcome does not match the saved schedule.');
       const existing = await tx.getFirstAsync<{id:string}>("SELECT id FROM session_outcomes WHERE workspace_id=? AND session_id=? AND block_id=? ORDER BY updated_at DESC LIMIT 1",session.workspaceId,sessionId,outcome.blockId);
       if (existing) {
         await tx.runAsync("UPDATE session_outcomes SET delivered=?,notes=?,updated_at=? WHERE workspace_id=? AND id=?",outcome.delivered ? 1 : 0,outcome.notes ?? null,now,session.workspaceId,existing.id);
@@ -213,12 +234,17 @@ export async function saveSessionOutcomes(
     }
     if (overallObservation && overallObservation.trim() && studentFocusIds && studentFocusIds.length > 0) {
       for (const studentId of studentFocusIds) {
-        const obsId = newId();
+        if(!await tx.getFirstAsync('SELECT id FROM students WHERE workspace_id=? AND id=?',session.workspaceId,studentId))throw new Error('Student is not in this workspace.');
+        const obsId = `review-${sessionId}-${studentId}`;
         await tx.runAsync(
-          "INSERT INTO observations(id, workspace_id, student_id, note, created_at, updated_at) VALUES(?,?,?,?,?,?)",
+          "INSERT INTO observations(id, workspace_id, student_id, note, created_at, updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(workspace_id,id) DO UPDATE SET note=excluded.note,updated_at=excluded.updated_at",
           obsId, session.workspaceId, studentId, overallObservation.trim(), now, now
         );
       }
+    }
+    if(conclude){
+      if(schedule){const next={...schedule,blocks:schedule.blocks.map((b:{id:string})=>({...b,status:outcomes.find(o=>o.blockId===b.id)?.delivered?'completed':'postponed'}))};await tx.runAsync('UPDATE schedules SET data=?,updated_at=? WHERE workspace_id=? AND id=?',JSON.stringify(next),now,session.workspaceId,current.schedule_id);}
+      await tx.runAsync("UPDATE class_sessions SET status='completed',ended_at=COALESCE(ended_at,?),elapsed_seconds=?,updated_at=? WHERE workspace_id=? AND id=?",now,effectiveElapsedSeconds(current),now,session.workspaceId,sessionId);
     }
   });
 }

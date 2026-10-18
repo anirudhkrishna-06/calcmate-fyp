@@ -35,7 +35,7 @@ function ProfileForm({ teacher }: { teacher:Teacher }) {
     <TextField label="School" value={school} onChangeText={setSchool} maxLength={150} />
     <TextField label="Experience (years)" value={experience} onChangeText={setExperience} keyboardType="number-pad" />
     </Section><Section title="Teaching grades">
-    <Choices values={[1,2,3,4].map(g => ({ value:String(g),label:`Grade ${g}` }))} selected={grades.map(String)}
+    <Choices values={[1,2,3,4,5].map(g => ({ value:String(g),label:`Grade ${g}` }))} selected={grades.map(String)}
       onSelect={value => { const g = Number(value) as Grade; setGrades(old => old.includes(g) ? old.filter(x => x!==g) : [...old,g].sort()); }} />
     </Section><Section title="Subjects">
     <Choices values={[{value:"Math",label:"Maths"},...["EVS","English","Hindi"].map(s => ({value:s,label:s,disabled:true}))]} selected={["Math"]} onSelect={() => {}} />

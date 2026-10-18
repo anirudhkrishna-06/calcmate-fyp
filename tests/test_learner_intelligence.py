@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from fastapi.testclient import TestClient
+from evidence_helpers import AuthenticatedEvidenceClient
 
 from src.api import app
 import src.learner_intelligence as li
@@ -87,7 +88,7 @@ class LearnerIntelligenceTests(unittest.TestCase):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.db_path = Path(self.tmp_dir.name) / "calcmate_test.db"
         _setup_test_db(self.db_path)
-        self.client = TestClient(app)
+        self.client = AuthenticatedEvidenceClient(app,self.db_path)
 
     def tearDown(self):
         self.client.close()

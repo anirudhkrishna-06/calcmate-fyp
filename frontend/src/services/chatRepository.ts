@@ -19,7 +19,7 @@ export async function listConversations():Promise<Conversation[]> {
   return withTransaction(async tx => tx.getAllAsync<Conversation>("SELECT * FROM conversations WHERE workspace_id=? ORDER BY updated_at DESC,id DESC",scope.workspaceId));
 }
 export async function createConversation(grade=currentGrade()):Promise<Conversation> {
-  if (![1,2,3,4].includes(grade)) throw new Error("Choose a grade from 1 to 4.");
+  if (![1,2,3,4,5].includes(grade)) throw new Error("Choose a grade from 1 to 5.");
   const scope=await chatScope(); const now=new Date().toISOString();
   const conversation:Conversation={id:newId(),workspace_id:scope.workspaceId,title:"New chat",grade:grade as Conversation["grade"],created_at:now,updated_at:now};
   await withTransaction(async tx => { await tx.runAsync("INSERT INTO conversations VALUES(?,?,?,?,?,?)",conversation.id,scope.workspaceId,conversation.title,grade,now,now); });
@@ -54,7 +54,7 @@ export async function prepareMessage(
 ): Promise<ChatMessage> {
   const text = question.trim();
   if (!text || text.length > 2000) throw new Error("Enter a question of 1 to 2000 characters.");
-  if (![1, 2, 3, 4].includes(grade)) throw new Error("Choose a grade from 1 to 4.");
+  if (![1, 2, 3, 4, 5].includes(grade)) throw new Error("Choose a grade from 1 to 5.");
   const scope = await chatScope();
   const id = newId();
   const now = new Date().toISOString();
@@ -90,7 +90,7 @@ export async function completeMessage(message:ChatMessage,response:RagResponse,m
   const now=new Date().toISOString();
   await withTransaction(async tx => {
     const id=`assistant-${message.id}`;
-    const metaJson=metadata ? JSON.stringify(metadata) : null;
+    const metaJson=JSON.stringify({...metadata,evidenceRevision:response.evidence_revision??null});
     await tx.runAsync("INSERT INTO messages VALUES(?,?,?,?,?,?) ON CONFLICT(workspace_id,id) DO NOTHING",id,message.workspace_id,"assistant",response.answer,now,now);
     await tx.runAsync("INSERT INTO message_details VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(workspace_id,message_id) DO NOTHING",id,message.workspace_id,message.conversation_id,"completed",metaJson,JSON.stringify(response.chunks),null,message.id);
     await tx.runAsync("UPDATE message_details SET status='completed',error=NULL WHERE workspace_id=? AND message_id=?",message.workspace_id,message.id);

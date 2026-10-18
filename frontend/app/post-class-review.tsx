@@ -12,13 +12,12 @@ import { colors, spacing } from "@/theme";
 import {
   getSessionById,
   getActiveSession,
-  completeClassSession,
   saveSessionOutcomes,
   getSessionAttendanceEvents
 } from "@/services/sessionService";
-import { loadGeneralSchedule, saveGeneralBlocks } from "@/services/generalScheduleService";
+import { loadGeneralSchedule } from "@/services/generalScheduleService";
 import { loadStudents } from "@/services/storageService";
-import type { GeneralSchedule, RotationBlock } from "@/types/generalSchedule";
+import type { GeneralSchedule } from "@/types/generalSchedule";
 import type { ClassSessionRecord, SessionAttendanceEventRecord } from "@/services/database";
 
 interface ReviewData {
@@ -62,6 +61,9 @@ export default function PostClassReviewScreen() {
   const [deliveryMap, setDeliveryMap] = useState<Record<string, boolean>>({});
   const [blockNotes, setBlockNotes] = useState<Record<string, string>>({});
   const [focusedStudents, setFocusedStudents] = useState<string[]>([]);
+  const [exitScores,setExitScores]=useState<Record<string,string>>({});
+  const [exitConcepts,setExitConcepts]=useState<Record<string,string>>({});
+  const [exitMaximum,setExitMaximum]=useState("10");
   const [observation, setObservation] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -95,7 +97,6 @@ export default function PostClassReviewScreen() {
     setSaving(true);
     setSaveError("");
     try {
-      await completeClassSession(data.session.id);
 
       const outcomes = (data.schedule?.blocks ?? []).map(b => ({
         blockId: b.id,
@@ -107,16 +108,15 @@ export default function PostClassReviewScreen() {
         data.session.id,
         outcomes,
         focusedStudents,
-        observation
+        observation,
+        focusedStudents.filter(id=>exitScores[id]?.trim()).map(id=>{
+          const student=data.students.find(s=>s.id===id)!;
+          const block=data.schedule?.blocks.find(b=>b.activities.some(a=>a.grade===student.grade&&a.conceptId===(exitConcepts[id]||data.schedule?.needs?.find(n=>n.grade===student.grade)?.conceptId)));
+          const activity=block?.activities.find(a=>a.grade===student.grade);
+          if(!block||!activity?.conceptId)throw new Error('Select a concept from this schedule for each exit assessment.');
+          return {studentId:id,conceptId:activity.conceptId,blockId:block.id,score:Number(exitScores[id]),maximum:Number(exitMaximum)};
+        }),true
       );
-
-      if (data.schedule) {
-        const updatedBlocks = data.schedule.blocks.map(b => ({
-          ...b,
-          status: (deliveryMap[b.id] ? "completed" : "postponed") as RotationBlock["status"]
-        }));
-        await saveGeneralBlocks(data.schedule.id, updatedBlocks);
-      }
 
       setSaved(true);
     } catch (e) {
@@ -134,6 +134,7 @@ export default function PostClassReviewScreen() {
           <AppText style={{ color: colors.forest, marginTop: 8 }}>
             Class session closed. Outcomes, block deliveries, and student learning notes have been recorded.
           </AppText>
+          <Button label="Plan next class" icon="calendar-outline" onPress={()=>router.push("/general-schedule/new")} style={{marginTop:16}} />
           <Button
             label="Return to Classroom Home"
             icon="home-outline"
@@ -242,7 +243,15 @@ export default function PostClassReviewScreen() {
         </View>
       </Section>
 
-      <Section title="Classroom Learning Observation" detail="Feeds directly into student profiles & next session planning">
+      {data?.schedule?<Section title="Exit assessments" detail="Optional: enter marks for selected students to update learning estimates and the next plan.">
+        <TextField label="Maximum marks" value={exitMaximum} onChangeText={setExitMaximum} keyboardType="decimal-pad" />
+        {data?.students.filter(s=>focusedStudents.includes(s.id)).map(student=><View key={student.id}>
+          <AppText>{student.name}</AppText>
+          {(data.schedule?.needs?.filter(n=>n.grade===student.grade)??[]).map(n=><Button key={n.conceptId} label={n.concept} variant="quiet" onPress={()=>setExitConcepts(old=>({...old,[student.id]:n.conceptId??''}))}/>)}
+          <TextField label={`Exit marks for ${student.name}`} value={exitScores[student.id]??''} onChangeText={value=>setExitScores(old=>({...old,[student.id]:value}))} keyboardType="decimal-pad" placeholder="Leave empty to save notes only" />
+        </View>)}
+      </Section>:null}
+      <Section title="Classroom Learning Observation" detail="Saved as teacher notes. Scored exit assessments update learning estimates.">
         <TextField
           label="Learning observation"
           value={observation}

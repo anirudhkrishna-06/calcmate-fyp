@@ -31,6 +31,7 @@ Metrics computed:
 """
 
 from __future__ import annotations
+from src.allocation_policy import observed_pressure
 
 import logging
 import math
@@ -341,7 +342,7 @@ class CalcmateScheduler(BaseScheduler):
                 weak = int(np.sum(vals < 0.60))
                 near_mastery = int(np.sum((vals >= 0.50) & (vals < 0.70)))
                 mean_k = float(np.mean(vals))
-                score = float(np.sum(np.maximum(0.0, 0.80 - vals)))
+                score = observed_pressure(vals)
                 n_t = taught_counts.get((g, cid), 0)
 
                 # Check strict in-grade prerequisite readiness

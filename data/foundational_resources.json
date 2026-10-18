@@ -1,0 +1,96 @@
+[
+  {
+    "concept_ids": [
+      "M107",
+      "M110"
+    ],
+    "grade": 1,
+    "subject": "Math",
+    "source_pdf": "aejm102.pdf",
+    "source_url": "https://ncert.nic.in/textbook/pdf/aejm102.pdf",
+    "source_pages": "10-17",
+    "resource_kind": "source_summary",
+    "text": "Source summary: NCERT Joyful Mathematics, Class 1, chapter 2. Children investigate long and round objects in their surroundings, explain their choices, and group objects with similar shapes. An object can be described in more than one way. Classroom activities include matching familiar objects, constructing models from boxes, and investigating whether objects roll, slide, or do both. Encourage children to justify classifications by observable features rather than memorize a single label.",
+    "resource_collection": "foundational-v1"
+  },
+  {
+    "concept_ids": [
+      "M101",
+      "M104",
+      "M105"
+    ],
+    "grade": 1,
+    "subject": "Math",
+    "source_pdf": "aejm112.pdf",
+    "source_url": "https://ncert.nic.in/textbook/pdf/aejm112.pdf",
+    "source_pages": "115-119",
+    "resource_kind": "source_summary",
+    "text": "Source summary: NCERT Joyful Mathematics, Class 1, chapter 12. A classroom shop connects counting, addition and subtraction with money. Learners recognize denominations, combine coins or notes to represent an amount, compare a toy's price with the money available, and work out how much more is required. Paper currency supports role play with shopkeepers and customers. Discuss different combinations that have the same total; choose small amounts when practising addition and subtraction within twenty.",
+    "resource_collection": "foundational-v1"
+  },
+  {
+    "concept_ids": [
+      "M209"
+    ],
+    "grade": 2,
+    "subject": "Math",
+    "source_pdf": "bejm104.pdf",
+    "source_url": "https://ncert.nic.in/textbook/pdf/bejm104.pdf",
+    "source_pages": "34-40",
+    "resource_kind": "source_summary",
+    "text": "Source summary: NCERT Joyful Mathematics, Class 2, chapter 4. Children investigate shadows and trace familiar objects to discover flat shapes. They recognize circles, rectangles, squares and triangles in surrounding objects. Discussions compare straight and curved boundaries and identify corners. Paper folding creates new shapes and gives children opportunities to examine edges and corners. Use concrete objects and ask learners to explain the shape they observe before introducing more formal descriptions.",
+    "resource_collection": "foundational-v1"
+  },
+  {
+    "concept_ids": [
+      "M207"
+    ],
+    "grade": 2,
+    "subject": "Math",
+    "source_pdf": "bejm104.pdf",
+    "source_url": "https://ncert.nic.in/textbook/pdf/bejm104.pdf",
+    "source_pages": "40-43",
+    "resource_kind": "source_summary",
+    "text": "Source summary: NCERT Joyful Mathematics, Class 2, chapter 4. Stamped shapes, leaves and repeated designs introduce patterns. Learners extend visual arrangements and number sequences, including equal jumps along numbered tiles. Ask children to describe the repeated feature or numerical step before predicting the next term. Sequences increasing by five provide a concrete starting point for skip counting; let partners check each other's rule and predictions.",
+    "resource_collection": "foundational-v1"
+  },
+  {
+    "concept_ids": [
+      "M110"
+    ],
+    "grade": 1,
+    "subject": "Math",
+    "source_pdf": "aejm102.pdf",
+    "source_url": "https://ncert.nic.in/textbook/pdf/aejm102.pdf",
+    "source_pages": "10",
+    "resource_kind": "textbook_excerpt",
+    "resource_collection": "foundational-v1",
+    "text": "Let children explain their logic of saying so."
+  },
+  {
+    "concept_ids": [
+      "M104"
+    ],
+    "grade": 1,
+    "subject": "Math",
+    "source_pdf": "aejm112.pdf",
+    "source_url": "https://ncert.nic.in/textbook/pdf/aejm112.pdf",
+    "source_pages": "117",
+    "resource_kind": "textbook_excerpt",
+    "resource_collection": "foundational-v1",
+    "text": "Encourage them to pay money in different combinations."
+  },
+  {
+    "concept_ids": [
+      "M209"
+    ],
+    "grade": 2,
+    "subject": "Math",
+    "source_pdf": "bejm104.pdf",
+    "source_url": "https://ncert.nic.in/textbook/pdf/bejm104.pdf",
+    "source_pages": "39",
+    "resource_kind": "textbook_excerpt",
+    "resource_collection": "foundational-v1",
+    "text": "Ask children to explore various objects around them and ask them to find out the number of their edges, corners and sides."
+  }
+]

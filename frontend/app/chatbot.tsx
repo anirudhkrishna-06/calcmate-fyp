@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, FlatList, Keyboard, KeyboardAvoidingView, Modal, Platform, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router,useLocalSearchParams,useFocusEffect } from "expo-router";
@@ -21,6 +21,7 @@ const gradePrompts={
   1:["Explain counting using classroom objects","Generate five addition questions within 20","Suggest an activity for comparing numbers"],
   2:["Explain tens and ones using bundled sticks","Generate five subtraction practice questions","Suggest a place-value activity"],
   3:["Explain multiplication using equal groups","Generate five practice questions on multiplication","How can I teach division through equal sharing?"],
+  5:["Explain decimals using a place-value chart","Compare fractions with different denominators","Suggest an activity for measuring area"],
   4:["Explain equivalent fractions using paper strips","Generate five practice questions on fractions","Suggest an activity for perimeter and measurement"]
 };
 function IconAction({name,label,onPress,disabled=false}:{name:keyof typeof Ionicons.glyphMap;label:string;onPress:()=>void;disabled?:boolean}) {
@@ -41,7 +42,8 @@ function Sources({json}:{json:string}) {
       <AppText variant="small" style={{color:colors.forest}}><Ionicons name="document-text-outline" size={13} /> {names.length} retrieved source{names.length===1 ? "" : "s"} {expanded ? "-" : "+"}</AppText>
     </Pressable>
     {expanded ? sources.map((source,index) => <View key={`${source.chunk_id}-${index}`} style={styles.source}>
-      <AppText variant="small">{source.source_pdf} | Grade {source.grade}</AppText>
+      <AppText variant="small">{source.source_pdf} | Grade {source.grade}{source.source_pages?` | Pages ${source.source_pages}`:''}{source.resource_kind==='source_summary'?' | Source summary':source.resource_kind==='textbook_excerpt'?' | Textbook excerpt':''}</AppText>
+      {source.source_url?.startsWith('https://ncert.nic.in/textbook/pdf/')?<Button label="Open NCERT source" variant="quiet" onPress={()=>void Linking.openURL(source.source_url!).catch(()=>{})}/>:null}
       {source.used_fallback ? <AppText variant="small" muted>Retrieved outside the selected grade filter.</AppText> : null}
       <Text selectable style={styles.sourceText}>{source.text}</Text>
     </View>) : null}
@@ -160,7 +162,7 @@ export default function ChatbotScreen({embedded=false}:{embedded?:boolean}={}) {
         <IconAction name="time-outline" label="Conversation history" onPress={() => {Keyboard.dismiss();setHistoryOpen(true);}} />
         <IconAction name="create-outline" label="New chat" onPress={() => void newChat()} disabled={loading} />
       </View>
-      {gradeOpen ? <View style={styles.grades}>{[1,2,3,4].map(g => <Pressable key={g} accessibilityRole="radio" accessibilityState={{selected:grade===g}}
+      {gradeOpen ? <View style={styles.grades}>{[1,2,3,4,5].map(g => <Pressable key={g} accessibilityRole="radio" accessibilityState={{selected:grade===g}}
         onPress={() => {setGrade(g);setGradeOpen(false);}} style={[styles.grade,grade===g && {borderColor:colors.forest}]}>
         <AppText>Grade {g}</AppText>
       </Pressable>)}</View> : null}

@@ -5,10 +5,12 @@ from src.rag_api import app
 from src.auth_api import router
 from src.admin_api import router as admin_router, admin_lifespan
 from src.learner_api import router as learner_router
+from src.allocation_engine import router as planning_router
 
 app.include_router(router)
 app.include_router(admin_router)
 app.include_router(learner_router)
+app.include_router(planning_router)
 app.router.lifespan_context = admin_lifespan
 
 
@@ -16,7 +18,14 @@ app.router.lifespan_context = admin_lifespan
 @app.exception_handler(RequestValidationError)
 async def validation_error(request, exc):
     # Never echo password/token input in a Pydantic validation response.
-    return JSONResponse(status_code=422, content={"detail": "Check the submitted fields and password length."})
+    locations=[str(part) for error in exc.errors() for part in error.get('loc',())]
+    if 'classroom_evidence' in locations:
+        detail='Classroom evidence is invalid, too large, or uses an outdated curriculum. Update app and server together and select fewer grades.'
+    elif 'db_path' in locations:
+        detail='Server database paths are not accepted. Send approved classroom evidence.'
+    else:
+        detail='Check the submitted fields and password length.'
+    return JSONResponse(status_code=422, content={"detail":detail})
 
 
 def main():

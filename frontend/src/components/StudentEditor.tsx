@@ -19,7 +19,7 @@ export function StudentEditor({ student, onSaved,defaultGrade=1 }: {defaultGrade
   return <View style={{ gap:12 }}>
     <TextField label="Student name" value={name} onChangeText={setName} maxLength={100} />
     <TextField label="Roll number" value={roll} onChangeText={setRoll} maxLength={12} />
-    <Choices values={[1,2,3,4].map(g => ({ value:String(g),label:`Grade ${g}` }))} selected={[String(grade)]} onSelect={g => setGrade(Number(g))} />
+    <Choices values={[1,2,3,4,5].map(g => ({ value:String(g),label:`Grade ${g}` }))} selected={[String(grade)]} onSelect={g => setGrade(Number(g))} />
     <Button label="Save student" icon="save-outline" disabled={busy||!name.trim()||!roll.trim()} onPress={() => void save()} /><FormStatus message={error} error />
   </View>;
 }

@@ -1,5 +1,12 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs');const path=require('node:path');const Module=require('node:module');const ts=require('typescript');
+const originalLoad=Module._load;
+Module._load=function(request,parent,isMain){
+ if(request==='./learnerEstimator'){
+  const file=path.resolve(__dirname,'../src/services/learnerEstimator.ts');const m=new Module(file,module);m._compile(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,file);return m.exports;
+ }
+ return originalLoad.call(this,request,parent,isMain);
+};
 const filename=path.resolve(__dirname,'../src/services/generalScheduler.ts');
 const mod=new Module(filename,module);mod.filename=filename;
 mod._compile(ts.transpileModule(fs.readFileSync(filename,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,filename);
@@ -10,10 +17,10 @@ function evidence(grade,mastery=0.9,count=8){
   const students=Array.from({length:count},(_,i)=>({id:`s${grade}-${i}`,grade}));
   return {selection:{grade,date},students,concepts:[concept],attendance:[],assessments:[],competencies:students.map(s=>({student_id:s.id,concept_id:concept.id,mastery,updated_at:date}))};
 }
-const payload=[1,2,3,4].map(g=>evidence(g));
+const payload=[1,2,3,4,5].map(g=>evidence(g));
 const selection={date,grades:[1,2,3,4],availableMinutes:90,priority:'balanced'};
 let cases=0;
-for(let minutes=5;minutes<=480;minutes++)for(const grades of [[1],[1,3],[1,2,4],[1,2,3,4]]){
+for(let minutes=5;minutes<=480;minutes++)for(const grades of [[1],[5],[1,3],[1,2,4],[1,2,3,4],[1,2,3,4,5]]){
   const schedule=buildGeneralSchedule({...selection,grades,availableMinutes:minutes},payload);
   validateGeneralDraft(schedule);
   let end=0;let previousEnd=0;
@@ -53,7 +60,7 @@ const absent=evidence(4,0.1);absent.attendance=absent.students.map(s=>({student_
 const attendance=buildGeneralSchedule(selection,[...payload.slice(0,3),absent]);assert.equal(attendance.needs.find(n=>n.grade===4).attending,0);assert.notEqual(attendance.blocks.find(b=>b.teacherGrade).teacherGrade,4);
 const assessed=evidence(4);assessed.assessments=assessed.students.map(s=>({id:s.id,student_id:s.id,concept_id:'c4',date,updated_at:'2026-10-12',score:1,maximum:10}));
 assert.equal(buildGeneralSchedule(selection,[...payload.slice(0,3),assessed]).needs.find(n=>n.grade===4).weak,8);
-for(const override of [{availableMinutes:0},{availableMinutes:481},{availableMinutes:5.5},{grades:[]},{grades:[1,1]},{grades:[5]},{date:'2026-02-30'},{date:'2026-99-99'},{priority:'random'}])assert.throws(()=>validateGeneralSelection({...selection,...override}));
+for(const override of [{availableMinutes:0},{availableMinutes:481},{availableMinutes:5.5},{grades:[]},{grades:[1,1]},{grades:[6]},{date:'2026-02-30'},{date:'2026-99-99'},{priority:'random'}])assert.throws(()=>validateGeneralSelection({...selection,...override}));
 const broken=structuredClone(stable);broken.blocks[0].durationMinutes++;assert.throws(()=>validateGeneralDraft(broken),/exactly/);
 const uncovered=structuredClone(stable);uncovered.blocks[0].activities.pop();assert.throws(()=>validateGeneralDraft(uncovered),/Every grade/);
 const duplicate=structuredClone(stable);duplicate.blocks[1].id=duplicate.blocks[0].id;assert.throws(()=>validateGeneralDraft(duplicate),/Duplicate/);
