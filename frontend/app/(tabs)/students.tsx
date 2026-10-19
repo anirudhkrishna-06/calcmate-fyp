@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/Workspace";
 import { AttendanceWorkspace } from "@/components/AttendanceWorkspace";
 import { BulkAssessment } from "@/components/BulkAssessment";
 import { ClassProgress } from "@/components/ClassProgress";
+import { LoadingState } from "@/components/LoadingState";
 import { loadStudents } from "@/services/storageService";
 import { useLocalData } from "@/hooks/useLocalData";
 import { useGrade } from "@/hooks/useGrade";
@@ -57,7 +58,7 @@ function StudentRegister({grade,search,setSearch,status,setStatus}:{grade:number
     </ScrollView>
     {search||status!=='all'?<Button label="Clear filters" variant="quiet" onPress={()=>{setSearch('');setStatus('all');}}/>:null}
     <FormStatus message={error} error/>{error ? <Button label="Reload students" variant="quiet" onPress={()=>void reload()}/> : null}
-    {loading&&!data ? <AppText muted>Opening register...</AppText> : null}
+    {loading&&!data ? <LoadingState label="Opening the class register" /> : null}
     {students?.length?<View style={{borderTopWidth:1,borderColor:colors.border}}>{students.map(student=><StudentRow key={student.id} student={student}/>)}</View>:null}
     {!loading&&!error&&students?.length===0 ? <EmptyState title={data?.length?"No matching students":"Your class register is empty"} detail={data?.length?"Try another name, roll number or learning filter.":"Enroll a student to begin recording attendance and marks."}/> : null}
   </View>;

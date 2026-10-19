@@ -47,6 +47,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs
   },
   meta: {
-    color: colors.clay
+    color: colors.charcoalMuted
   }
 });

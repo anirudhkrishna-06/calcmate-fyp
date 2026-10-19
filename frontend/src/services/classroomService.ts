@@ -40,7 +40,8 @@ export async function classLearningEvidence(grade:number){
   const session=await requireSession();
   return withTransaction(async tx=>{
     await assertScope(tx,session);const w=session.workspaceId;
-    const concepts=await tx.getAllAsync<ConceptRecord>("SELECT * FROM concepts WHERE workspace_id=? AND grade=? ORDER BY title",w,grade);
+    // IDs encode the intended curriculum sequence; alphabetical titles do not.
+    const concepts=await tx.getAllAsync<ConceptRecord>("SELECT * FROM concepts WHERE workspace_id=? AND grade=? ORDER BY id",w,grade);
     const students=await tx.getAllAsync<{id:string;name:string;roll:string}>("SELECT id,name,roll FROM students WHERE workspace_id=? AND grade=? ORDER BY roll,name",w,grade);
     const evidence=await tx.getAllAsync<{student_id:string;concept_id:string;mastery:number}>("SELECT c.student_id,c.concept_id,c.mastery FROM competencies c JOIN students s ON s.id=c.student_id AND s.workspace_id=c.workspace_id WHERE c.workspace_id=? AND s.grade=?",w,grade);
     return {students,concepts,progress:concepts.map(concept=>{

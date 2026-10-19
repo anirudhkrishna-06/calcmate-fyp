@@ -134,10 +134,10 @@ export async function dashboard() {
 }
 export async function exportWorkspace() {
   const session = await requireSession();
-  const result: Record<string, unknown> = { version:3, workspaceId:session.workspaceId, mode:session.mode, createdAt:new Date().toISOString() };
+  const result: Record<string, unknown> = { version:4, workspaceId:session.workspaceId, mode:session.mode, createdAt:new Date().toISOString() };
   const db = await getDatabase(); await assertScope(db,session);
   await withTransaction(async tx => {
-    for (const table of ["profiles","students","concepts","attendance","assessments","competencies","observations","schedules","messages","conversations","message_details","concept_prerequisites","class_sessions","session_attendance_events","session_outcomes","assessment_origins"]) {
+    for (const table of ["profiles","students","concepts","attendance","assessments","assessment_metadata","competencies","observations","schedules","messages","conversations","message_details","concept_prerequisites","class_sessions","session_attendance_events","session_outcomes","assessment_origins","notifications"]) {
       result[table] = await tx.getAllAsync(`SELECT * FROM ${table} WHERE workspace_id=?`,session.workspaceId);
     }
   });

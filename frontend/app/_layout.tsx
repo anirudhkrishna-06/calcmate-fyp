@@ -42,8 +42,11 @@ export default function RootLayout() {
         <Stack.Screen name="general-schedule/new" options={{ title:"Create general schedule" }} />
         <Stack.Screen name="general-schedule/[id]" options={{ title:"General schedule" }} />
         <Stack.Screen name="active-session" options={{ title:"Active Class Session",headerShown:false }} />
+        <Stack.Screen name="notifications" options={{ title:"Teacher notifications",headerShown:false }} />
         <Stack.Screen name="post-class-review" options={{ title:"Post-Class Review",headerShown:false }} />
         <Stack.Screen name="curriculum" options={{ title:"Knowledge Graph" }} />
+        <Stack.Screen name="weekly-schedule/new" options={{ title:"Weekly Classroom Plan" }} />
+        <Stack.Screen name="weekly-schedule/[id]" options={{ title:"Weekly Schedule",headerShown:false }} />
       </Stack.Protected>
     </Stack>
   </>;

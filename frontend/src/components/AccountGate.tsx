@@ -15,5 +15,5 @@ export function AccountGate({children}:{children:ReactNode}) {
     <Button label="Check again" icon="refresh-outline" variant="quiet" onPress={()=>void reload()} />
     <Link href="/welcome" asChild><Button label="Back to welcome" variant="secondary" /></Link>
   </View>;
-  return <>{apiBaseUrl()?.startsWith("http:") ? <AppText variant="small" muted>Local development connection. Use a unique test password, not a real-school password.</AppText> : null}{children}</>;
+  return <>{apiBaseUrl()?.startsWith("http:") ? <AppText variant="small" muted>Login </AppText> : null}{children}</>;
 }

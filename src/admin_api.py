@@ -10,7 +10,7 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field, ConfigDict
 
-from src.auth_api import connection, limit, transport
+from src.auth_api import connection, limit, transport, password_hash
 
 router = APIRouter(prefix="/admin", tags=["administrator"])
 
@@ -75,6 +75,90 @@ def approve_selected(body: BulkApproval, request: Request, authorization: str | 
             db.execute("UPDATE accounts SET approved=1 WHERE id=?", (account_id,))
             db.execute("INSERT INTO account_decisions VALUES(?,?) ON CONFLICT(account_id) DO UPDATE SET reviewed=excluded.reviewed",(account_id,time.time()))
     return {"status": "approved", "count": len(ids)}
+
+
+@router.get("/demo-status")
+def demo_status(request: Request, authorization: str | None = Header(default=None)):
+    """Return whether the demo workspace has been seeded and basic counts."""
+    import json, os, sqlite3
+    authorize(request, authorization)
+    db_path = os.getenv("CALCMATE_AUTH_DB", str(Path(__file__).resolve().parent.parent / "data" / "auth.sqlite3"))
+    # Demo data lives in the SQLite file produced by the frontend (device-side).
+    # The admin endpoint just tells the UI whether a demo account exists so the
+    # presenter can approve it without a real sign-up flow.
+    with connection() as db:
+        demo = db.execute(
+            "SELECT id, approved, disabled FROM accounts WHERE email=?", ("demo@vidyaprimary.school",)
+        ).fetchone()
+    return {
+        "demo_account_exists": bool(demo),
+        "demo_approved": bool(demo and demo["approved"] and not demo["disabled"]),
+        "demo_email": "demo@vidyaprimary.school",
+        "demo_password": "DemoCalc2026",
+        "instructions": (
+            "Sign in to the CalcMate app using the credentials above. "
+            "The app seeds mid-year student data automatically on first launch in demo mode. "
+            "Use 'Approve demo account' below to grant classroom access without a review queue."
+        )
+    }
+
+
+@router.post("/seed-demo")
+def seed_demo(request: Request, authorization: str | None = Header(default=None)):
+    """Create (or re-approve) the demo teacher account so the app can log in immediately."""
+    import json, hashlib, secrets, time
+    from src.auth_api import password_hash as make_hash
+    authorize(request, authorization)
+
+    demo_email = "demo@vidyaprimary.school"
+    demo_password = "DemoCalc2026"
+    demo_name = "Ananya Rao"
+    demo_school = "Vidya Primary School"
+
+    hashed = make_hash(demo_password)
+    import uuid
+    account_id = "demo-teacher-v1"
+    profile = json.dumps({
+        "id": account_id,
+        "name": demo_name,
+        "schoolName": demo_school,
+        "experience": 6,
+        "grades": [1, 2, 3, 4, 5],
+        "preferredSubject": "Math"
+    })
+
+    now = time.time()
+    with connection() as db:
+        db.execute("BEGIN IMMEDIATE")
+        existing = db.execute("SELECT id, approved FROM accounts WHERE email=?", (demo_email,)).fetchone()
+        if existing:
+            # Re-enable and approve if it was disabled/rejected
+            db.execute(
+                "UPDATE accounts SET approved=1, disabled=0, password_hash=? WHERE email=?",
+                (hashed, demo_email)
+            )
+            acct_id = existing["id"]
+        else:
+            db.execute(
+                "INSERT INTO accounts(id,email,password_hash,profile,approved,disabled) VALUES(?,?,?,?,1,0)",
+                (account_id, demo_email, hashed, profile)
+            )
+            db.execute("INSERT OR IGNORE INTO account_signup_times VALUES(?,?)", (account_id, now))
+            acct_id = account_id
+        db.execute(
+            "INSERT INTO account_decisions VALUES(?,?) ON CONFLICT(account_id) DO UPDATE SET reviewed=excluded.reviewed",
+            (acct_id, now)
+        )
+
+    return {
+        "status": "ready",
+        "email": demo_email,
+        "password": demo_password,
+        "message": (
+            "Demo account approved. Open the CalcMate app, log in with the credentials above, "
+            "and the mid-year classroom (Grades 1-5, July onwards) will seed automatically."
+        )
+    }
 
 
 @router.post("/requests/{account_id}/{action}")

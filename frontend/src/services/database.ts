@@ -189,6 +189,32 @@ CREATE TRIGGER evidence_session_outcomes_insert AFTER INSERT ON session_outcomes
 CREATE TRIGGER evidence_session_outcomes_update AFTER UPDATE ON session_outcomes BEGIN INSERT INTO app_meta(key,value) VALUES('classroom.revision:'||NEW.workspace_id,'1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1; END;
 CREATE TRIGGER evidence_session_outcomes_delete AFTER DELETE ON session_outcomes BEGIN INSERT INTO app_meta(key,value) VALUES('classroom.revision:'||OLD.workspace_id,'1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1; END;`);
 
+// Keeps the evidence model backwards-compatible while making seeded/manual marks
+// explainable in the teacher UI and useful for review analytics.
+migrations.push(`CREATE TABLE IF NOT EXISTS assessment_metadata (
+  workspace_id TEXT NOT NULL,
+  assessment_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('diagnostic','classwork','quiz','assignment')),
+  title TEXT NOT NULL,
+  PRIMARY KEY(workspace_id, assessment_id),
+  FOREIGN KEY(workspace_id, assessment_id) REFERENCES assessments(workspace_id,id) ON DELETE CASCADE
+);`);
+
+migrations.push(`CREATE TABLE IF NOT EXISTS notifications (
+  id TEXT NOT NULL,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK(type IN ('learning_change','missed_entry','system')),
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  grade INTEGER,
+  concept_id TEXT,
+  read_at TEXT,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY(workspace_id,id),
+  FOREIGN KEY(workspace_id,concept_id) REFERENCES concepts(workspace_id,id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS notifications_recent ON notifications(workspace_id,created_at);`);
+
 let opening: Promise<SQLite.SQLiteDatabase> | undefined;
 export function getDatabase() {
   opening ??= (async () => {
@@ -241,6 +267,7 @@ export type ConceptRecord = BaseRecord & {
 };
 export type AttendanceRecord = BaseRecord & { student_id: string; date: string; status: "present" | "absent" | "late" };
 export type AssessmentRecord = BaseRecord & { student_id: string; concept_id: string; date: string; score: number; maximum: number };
+export type AssessmentMetadataRecord = { workspace_id: string; assessment_id: string; kind: "diagnostic" | "classwork" | "quiz" | "assignment"; title: string };
 export type CompetencyRecord = BaseRecord & { student_id: string; concept_id: string; mastery: number };
 export type LearnerConceptStateRecord = {
   id: string;

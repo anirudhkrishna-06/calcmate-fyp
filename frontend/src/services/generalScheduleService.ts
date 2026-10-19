@@ -30,7 +30,7 @@ export async function createGeneralSchedule(selection:GeneralSelection){
   return schedule;
 }
 export async function listGeneralSchedules(){
-  return (await (await localRepository('schedules')).list()).map(r=>JSON.parse(r.data)).filter((s):s is GeneralSchedule=>s.kind==='general-schedule'&&s.version===1).sort((a,b)=>b.selection.date.localeCompare(a.selection.date)||b.createdAt.localeCompare(a.createdAt));
+  return (await (await localRepository('schedules')).list()).map(r=>JSON.parse(r.data)).filter((s):s is GeneralSchedule=>s.kind==='general-schedule'&&s.version===1&&!s.weeklyScheduleId).sort((a,b)=>b.selection.date.localeCompare(a.selection.date)||b.createdAt.localeCompare(a.createdAt));
 }
 export async function loadGeneralSchedule(id:string){
   const session=await requireSession();

@@ -59,6 +59,40 @@ export async function getActiveSession(): Promise<ClassSessionRecord | null> {
   });
 }
 
+export interface PendingClassEntry {
+  sessionId: string;
+  scheduleId: string;
+  date: string;
+  startedAt: string;
+  completedBlocks: number;
+  totalBlocks: number;
+}
+
+/** Completed classes whose delivery record was never entered in post-class review. */
+export async function listPendingClassEntries(): Promise<PendingClassEntry[]> {
+  const session = await requireSession();
+  return withTransaction(async tx => {
+    await assertScope(tx, session);
+    const sessions = await tx.getAllAsync<ClassSessionRecord>(
+      "SELECT * FROM class_sessions WHERE workspace_id=? AND date<=? AND (status='completed' OR (date<? AND status IN ('active','paused'))) ORDER BY date DESC, updated_at DESC LIMIT 20",
+      session.workspaceId, today(), today(),
+    );
+    const pending: PendingClassEntry[] = [];
+    for (const current of sessions) {
+      if (!current.schedule_id) continue;
+      const row = await tx.getFirstAsync<{ data: string }>("SELECT data FROM schedules WHERE workspace_id=? AND id=?", session.workspaceId, current.schedule_id);
+      if (!row) continue;
+      let blocks = 0;
+      try { blocks = Array.isArray(JSON.parse(row.data).blocks) ? JSON.parse(row.data).blocks.length : 0; } catch { blocks = 0; }
+      if (!blocks) continue;
+      const outcomes = await tx.getFirstAsync<{ count: number }>("SELECT COUNT(*) count FROM session_outcomes WHERE workspace_id=? AND session_id=?", session.workspaceId, current.id);
+      const completedBlocks = Number(outcomes?.count ?? 0);
+      if (completedBlocks < blocks) pending.push({ sessionId: current.id, scheduleId: current.schedule_id, date: current.date, startedAt: current.started_at, completedBlocks, totalBlocks: blocks });
+    }
+    return pending;
+  });
+}
+
 export async function getSessionById(sessionId: string): Promise<ClassSessionRecord | null> {
   const session = await requireSession();
   return withTransaction(async tx => {
@@ -194,7 +228,8 @@ export async function saveSessionOutcomes(
   studentFocusIds?: string[],
   overallObservation?: string,
   exitAssessments:{studentId:string;conceptId:string;score:number;maximum:number;blockId:string}[]=[],
-  conclude=false
+  conclude=false,
+  attentionReviews:{grade:number;conceptId:string;resolution:'resolved'|'continue';blockId:string}[]=[]
 ): Promise<void> {
   const session = await requireSession();
   const now = new Date().toISOString();
@@ -217,6 +252,40 @@ export async function saveSessionOutcomes(
       await tx.runAsync(`INSERT INTO assessments VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(workspace_id,id) DO UPDATE SET score=excluded.score,maximum=excluded.maximum,updated_at=excluded.updated_at`,id,session.workspaceId,e.studentId,e.conceptId,current.date,e.score,e.maximum,now,now);
       await tx.runAsync('INSERT OR IGNORE INTO assessment_origins VALUES(?,?,?,?)',session.workspaceId,id,sessionId,e.blockId);
       await persistLearnerState(tx,session.workspaceId,e.studentId,e.conceptId);
+    }
+    for (const review of attentionReviews) {
+      if (!['resolved','continue'].includes(review.resolution) || !Number.isInteger(review.grade)) throw new Error('Invalid attention review.');
+      const concept = await tx.getFirstAsync<{ title: string; grade: number }>('SELECT title,grade FROM concepts WHERE workspace_id=? AND id=?', session.workspaceId, review.conceptId);
+      if (!concept || concept.grade !== review.grade) throw new Error('Attention review does not match the selected concept.');
+      if (schedule && !schedule.blocks.some((b:{id:string;activities:{grade:number;conceptId:string|null}[]}) => b.id === review.blockId && b.activities.some(a => a.grade === review.grade && a.conceptId === review.conceptId))) throw new Error('Attention review does not match the saved teaching block.');
+      const targetRows = await tx.getAllAsync<{id:string}>('SELECT id FROM students WHERE workspace_id=? AND grade=?', session.workspaceId, review.grade);
+      const focusedIds = new Set(studentFocusIds ?? []);
+      const matchingFocused = targetRows.filter(row => focusedIds.has(row.id)).map(row => row.id);
+      const targets = matchingFocused.length ? matchingFocused : targetRows.map(row => row.id);
+      for (const studentId of targets) {
+        const student = await tx.getFirstAsync<{id:string;grade:number}>('SELECT id,grade FROM students WHERE workspace_id=? AND id=?', session.workspaceId, studentId);
+        if (!student || student.grade !== review.grade) continue;
+        // A teacher resolution is explicit classroom evidence. It is kept as a
+        // labelled review mark so the BKT history remains auditable.
+        const assessmentId = `teacher-review-${sessionId}-${studentId}-${review.conceptId}`;
+        const score = review.resolution === 'resolved' ? 8 : 4;
+        await tx.runAsync(
+          `INSERT INTO assessments VALUES(?,?,?,?,?,?,?,?,?)
+           ON CONFLICT(workspace_id,id) DO UPDATE SET score=excluded.score,maximum=excluded.maximum,updated_at=excluded.updated_at`,
+          assessmentId, session.workspaceId, studentId, review.conceptId, current.date, score, 10, now, now,
+        );
+        await tx.runAsync('INSERT INTO assessment_metadata(workspace_id,assessment_id,kind,title) VALUES(?,?,?,?) ON CONFLICT(workspace_id,assessment_id) DO UPDATE SET title=excluded.title', session.workspaceId, assessmentId, 'classwork', `Teacher review · ${review.resolution}`);
+        await tx.runAsync('INSERT OR IGNORE INTO assessment_origins VALUES(?,?,?,?)', session.workspaceId, assessmentId, sessionId, review.blockId);
+        await persistLearnerState(tx, session.workspaceId, studentId, review.conceptId);
+      }
+      if (review.resolution === 'continue') {
+        await tx.runAsync(
+          `INSERT INTO notifications(id,workspace_id,type,title,body,grade,concept_id,read_at,created_at)
+           VALUES(?,?,?,?,?,?,?,NULL,?)
+           ON CONFLICT(workspace_id,id) DO UPDATE SET title=excluded.title,body=excluded.body,read_at=NULL,created_at=excluded.created_at`,
+          `learning-change-${sessionId}-${review.conceptId}`, session.workspaceId, 'learning_change', `Keep ${concept.title} in the next class`, `Grade ${review.grade} still needs support on ${concept.title}. The next plan will keep this concept active before moving ahead.`, review.grade, review.conceptId, now,
+        );
+      }
     }
     for (const outcome of outcomes) {
       if(schedule&&!schedule.blocks.some((b:{id:string})=>b.id===outcome.blockId))throw new Error('Teaching outcome does not match the saved schedule.');

@@ -1,139 +1,404 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Keyboard, KeyboardAvoidingView, Modal, Platform, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  ActivityIndicator,
+  FlatList,
+  Keyboard,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Linking,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  Animated,
+  Easing,
+  
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { router,useLocalSearchParams,useFocusEffect } from "expo-router";
+import { router, useLocalSearchParams, useFocusEffect } from "expo-router";
 import NetInfo from "@react-native-community/netinfo";
 import { AppText } from "@/components/AppText";
-import { Button } from '@/components/Button';
+import { Button } from "@/components/Button";
 import { AssistantMessage } from "@/components/AssistantMessage";
 import { ScheduleCard } from "@/components/ScheduleCard";
 import { colors } from "@/theme";
 import { Conversation, ChatMessage, RagChunk } from "@/types/chat";
 import type { GeneralSchedule } from "@/types/generalSchedule";
-import { listConversations,createConversation,selectConversation,restoreConversation,conversationMessages,sendMessage,retryMessage } from "@/services/chatService";
+import {
+  listConversations,
+  createConversation,
+  selectConversation,
+  restoreConversation,
+  conversationMessages,
+  sendMessage,
+  retryMessage,
+} from "@/services/chatService";
 import { apiBaseUrl } from "@/services/ragClient";
 import { useGrade } from "@/hooks/useGrade";
 import { chatErrorSummary } from "@/services/chatPresentation";
 
-
-const gradePrompts={
-  1:["Explain counting using classroom objects","Generate five addition questions within 20","Suggest an activity for comparing numbers"],
-  2:["Explain tens and ones using bundled sticks","Generate five subtraction practice questions","Suggest a place-value activity"],
-  3:["Explain multiplication using equal groups","Generate five practice questions on multiplication","How can I teach division through equal sharing?"],
-  5:["Explain decimals using a place-value chart","Compare fractions with different denominators","Suggest an activity for measuring area"],
-  4:["Explain equivalent fractions using paper strips","Generate five practice questions on fractions","Suggest an activity for perimeter and measurement"]
+/* ---------- Design tokens: ivory, deep forest, antique gold ---------- */
+const P = {
+  bg: "#FAF8F3",
+  card: "#FFFFFF",
+  ink: "#1C2B23",
+  body: "#2E3D35",
+  muted: "#7C847D",
+  line: "#ECE7DB",
+  forest: colors.forest,
+  gold: "#B8924A",
+  goldSoft: "#F3EBD7",
+  sage: "#EEF2EA",
+  danger: "#B5483A",
+  disabled: "#D8D5CA",
 };
-function IconAction({name,label,onPress,disabled=false}:{name:keyof typeof Ionicons.glyphMap;label:string;onPress:()=>void;disabled?:boolean}) {
-  const [tip,setTip]=useState(false);
-  return <View><Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{disabled}} disabled={disabled}
-    onPress={onPress} onHoverIn={() => setTip(true)} onHoverOut={() => setTip(false)} onLongPress={() => setTip(true)} onPressOut={() => setTip(false)}
-    style={({pressed}) => [styles.iconButton,{opacity:disabled ? 0.4 : pressed ? 0.6 : 1}]}>
-    <Ionicons name={name} size={22} color={colors.forest} />
-  </Pressable>{tip ? <View style={styles.tooltip}><Text style={{color:colors.white,fontSize:12}}>{label}</Text></View> : null}</View>;
-}
-function Sources({json}:{json:string}) {
-  const [expanded,setExpanded]=useState(false);
-  let sources:RagChunk[]=[]; try {sources=JSON.parse(json);} catch {return null;}
-  if (!sources.length) return null;
-  const names=[...new Set(sources.map(s => s.source_pdf))];
-  return <View style={{marginTop:10,gap:8}}>
-    <Pressable accessibilityRole="button" accessibilityLabel="View retrieved sources" onPress={() => setExpanded(!expanded)} style={{minHeight:48,justifyContent:"center"}}>
-      <AppText variant="small" style={{color:colors.forest}}><Ionicons name="document-text-outline" size={13} /> {names.length} retrieved source{names.length===1 ? "" : "s"} {expanded ? "-" : "+"}</AppText>
+const SERIF = Platform.select({ ios: "Georgia", android: "serif", default: "serif" });
+
+const gradePrompts: Record<number, string[]> = {
+  1: ["Explain counting using classroom objects", "Generate five addition questions within 20", "Suggest an activity for comparing numbers"],
+  2: ["Explain tens and ones using bundled sticks", "Generate five subtraction practice questions", "Suggest a place-value activity"],
+  3: ["Explain multiplication using equal groups", "Generate five practice questions on multiplication", "How can I teach division through equal sharing?"],
+  4: ["Explain equivalent fractions using paper strips", "Generate five practice questions on fractions", "Suggest an activity for perimeter and measurement"],
+  5: ["Explain decimals using a place-value chart", "Compare fractions with different denominators", "Suggest an activity for measuring area"],
+};
+
+const EMPTY_COLORS = {
+    forest: "#294C38",
+    sage: "#DDEBD6",
+    yellow: "#F4D778",
+    coral: "#F0A18C",
+    blue: "#BBD8E9",
+    lavender: "#DCD3F0",
+    muted: "#788176",
+  };
+
+function IconAction({
+  name,
+  label,
+  onPress,
+  disabled = false,
+}: {
+  name: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      hitSlop={4}
+      style={({ pressed }) => [
+        styles.iconButton,
+        { opacity: disabled ? 0.35 : 1 },
+        pressed && { backgroundColor: P.sage },
+      ]}
+    >
+      <Ionicons name={name} size={21} color={P.ink} />
     </Pressable>
-    {expanded ? sources.map((source,index) => <View key={`${source.chunk_id}-${index}`} style={styles.source}>
-      <AppText variant="small">{source.source_pdf} | Grade {source.grade}{source.source_pages?` | Pages ${source.source_pages}`:''}{source.resource_kind==='source_summary'?' | Source summary':source.resource_kind==='textbook_excerpt'?' | Textbook excerpt':''}</AppText>
-      {source.source_url?.startsWith('https://ncert.nic.in/textbook/pdf/')?<Button label="Open NCERT source" variant="quiet" onPress={()=>void Linking.openURL(source.source_url!).catch(()=>{})}/>:null}
-      {source.used_fallback ? <AppText variant="small" muted>Retrieved outside the selected grade filter.</AppText> : null}
-      <Text selectable style={styles.sourceText}>{source.text}</Text>
-    </View>) : null}
-  </View>;
+  );
 }
-export default function ChatbotScreen({embedded=false}:{embedded?:boolean}={}) {
-  const params=useLocalSearchParams<{grade?:string;prompt?:string;studentId?:string;conceptId?:string;screenContext?:string}>();
-  const {grade,setGrade,error:gradeError}=useGrade(Number(params.grade));
-  const prompts=gradePrompts[grade];
-  const contextualDraft=useRef("");
-  const [conversation,setConversation]=useState<Conversation | null>(null); const [history,setHistory]=useState<Conversation[]>([]);
-  const [messages,setMessages]=useState<ChatMessage[]>([]); const [draft,setDraft]=useState("");
-  const [historyOpen,setHistoryOpen]=useState(false); const [gradeOpen,setGradeOpen]=useState(false);
-  const [busy,setBusy]=useState(false); const [loading,setLoading]=useState(true); const [error,setError]=useState("");
-  const [offline,setOffline]=useState(false); const [pendingConversation,setPendingConversation]=useState<string | null>(null);
-  const [legacyOpen,setLegacyOpen]=useState<Record<string,boolean>>({});
-  const list=useRef<FlatList<ChatMessage>>(null); const composer=useRef<TextInput>(null);
-  const active=useRef<string | null>(null); const operation=useRef(false); const drafts=useRef<Record<string,string>>({});
-  const scroll=useRef(true); const mounted=useRef(true);
-  let configured=false; try {configured=!!apiBaseUrl();} catch { /* Invalid config is reported by the send service. */ }
-  const scrollToEnd=useCallback(() => { if(scroll.current) list.current?.scrollToEnd({animated:true}); },[]);
-  const refresh=useCallback(async (id:string) => {
-    const [rows,conversations]=await Promise.all([conversationMessages(id),listConversations()]);
+
+function Mark({ size = 28 }: { size?: number }) {
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size * 0.34,
+        backgroundColor: P.forest,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <Ionicons name="sparkles" size={size * 0.5} color="#E8C97A" />
+    </View>
+  );
+}
+
+function Sources({ json }: { json: string }) {
+  const [expanded, setExpanded] = useState(false);
+  let sources: RagChunk[] = [];
+  try {
+    sources = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  if (!sources.length) return null;
+  const names = [...new Set(sources.map((s) => s.source_pdf))];
+  return (
+    <View style={{ marginTop: 12 }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="View retrieved sources"
+        onPress={() => setExpanded(!expanded)}
+        style={styles.sourcesToggle}
+      >
+        <Ionicons name="document-text-outline" size={14} color={P.gold} />
+        <Text style={styles.sourcesToggleText}>
+          {names.length} source{names.length === 1 ? "" : "s"}
+        </Text>
+        <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={13} color={P.muted} />
+      </Pressable>
+      {expanded
+        ? sources.map((source, index) => (
+            <View key={`${source.chunk_id}-${index}`} style={styles.source}>
+              <AppText variant="small">
+                {source.source_pdf} | Grade {source.grade}
+                {source.source_pages ? ` | Pages ${source.source_pages}` : ""}
+                {source.resource_kind === "source_summary"
+                  ? " | Source summary"
+                  : source.resource_kind === "textbook_excerpt"
+                  ? " | Textbook excerpt"
+                  : ""}
+              </AppText>
+              {source.source_url?.startsWith("https://ncert.nic.in/textbook/pdf/") ? (
+                <Button
+                  label="Open NCERT source"
+                  variant="quiet"
+                  onPress={() => void Linking.openURL(source.source_url!).catch(() => {})}
+                />
+              ) : null}
+              {source.used_fallback ? (
+                <AppText variant="small" muted>
+                  Retrieved outside the selected grade filter.
+                </AppText>
+              ) : null}
+              <Text selectable style={styles.sourceText}>
+                {source.text}
+              </Text>
+            </View>
+          ))
+        : null}
+    </View>
+  );
+}
+
+export default function ChatbotScreen({ embedded = false }: { embedded?: boolean } = {}) {
+  const params = useLocalSearchParams<{
+    grade?: string;
+    prompt?: string;
+    studentId?: string;
+    conceptId?: string;
+    screenContext?: string;
+  }>();
+  const { grade, setGrade, error: gradeError } = useGrade(Number(params.grade));
+  const prompts = gradePrompts[grade];
+  const contextualDraft = useRef("");
+  const [conversation, setConversation] = useState<Conversation | null>(null);
+  const [history, setHistory] = useState<Conversation[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [draft, setDraft] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [gradeOpen, setGradeOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [offline, setOffline] = useState(false);
+  const [pendingConversation, setPendingConversation] = useState<string | null>(null);
+  const [legacyOpen, setLegacyOpen] = useState<Record<string, boolean>>({});
+  const list = useRef<FlatList<ChatMessage>>(null);
+  const composer = useRef<TextInput>(null);
+  const active = useRef<string | null>(null);
+  const operation = useRef(false);
+  const drafts = useRef<Record<string, string>>({});
+  const scroll = useRef(true);
+  const mounted = useRef(true);
+  let configured = false;
+  try {
+    configured = !!apiBaseUrl();
+  } catch {
+    /* Invalid config is reported by the send service. */
+  }
+  const scrollToEnd = useCallback(() => {
+    if (scroll.current) list.current?.scrollToEnd({ animated: true });
+  }, []);
+  const refresh = useCallback(async (id: string) => {
+    const [rows, conversations] = await Promise.all([conversationMessages(id), listConversations()]);
     if (!mounted.current) return;
-    setHistory(conversations); if(active.current===id) {setMessages(rows);setConversation(conversations.find(c => c.id===id) ?? null);}
-  },[]);
-  useFocusEffect(useCallback(()=>{if(active.current)void refresh(active.current).catch(()=>setError("Could not reload saved conversation."));},[refresh]));
+    setHistory(conversations);
+    if (active.current === id) {
+      setMessages(rows);
+      setConversation(conversations.find((c) => c.id === id) ?? null);
+    }
+  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      if (active.current) void refresh(active.current).catch(() => setError("Could not reload saved conversation."));
+    }, [refresh])
+  );
   useEffect(() => {
-    mounted.current=true;
-    restoreConversation().then(async c => {
-      if(!mounted.current) return;
-      active.current=c.id; setConversation(c); await refresh(c.id);
-    }).catch(e => {if(mounted.current)setError(e instanceof Error ? e.message : "Could not open saved chat.");})
-      .finally(() => {if(mounted.current)setLoading(false);});
-    const unsubscribe=NetInfo.addEventListener(state => {setOffline(state.isConnected===false);});
-    const keyboard=Keyboard.addListener("keyboardDidShow",scrollToEnd);
-    return () => {mounted.current=false;unsubscribe();keyboard.remove();};
-  },[refresh,scrollToEnd]);
-  useEffect(()=>{if(!loading&&params.prompt&&contextualDraft.current!==params.prompt){contextualDraft.current=params.prompt;setDraft(params.prompt);if(active.current)drafts.current[active.current]=params.prompt;composer.current?.focus();}},[loading,params.prompt]);
-  async function switchTo(c:Conversation) {
-    setHistoryOpen(false);setGradeOpen(false);setError("");scroll.current=true;setLoading(true);
-    active.current=c.id;setConversation(c);setGrade(c.grade);setDraft(drafts.current[c.id] ?? "");setMessages([]);
-    try {await selectConversation(c.id);await refresh(c.id);}
-    catch(e) {setError(e instanceof Error ? e.message : "Could not load chat.");}
-    finally {setLoading(false);}
+    mounted.current = true;
+    restoreConversation()
+      .then(async (c) => {
+        if (!mounted.current) return;
+        active.current = c.id;
+        setConversation(c);
+        await refresh(c.id);
+      })
+      .catch((e) => {
+        if (mounted.current) setError(e instanceof Error ? e.message : "Could not open saved chat.");
+      })
+      .finally(() => {
+        if (mounted.current) setLoading(false);
+      });
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      setOffline(state.isConnected === false);
+    });
+    const keyboard = Keyboard.addListener("keyboardDidShow", scrollToEnd);
+    return () => {
+      mounted.current = false;
+      unsubscribe();
+      keyboard.remove();
+    };
+  }, [refresh, scrollToEnd]);
+  useEffect(() => {
+    if (!loading && params.prompt && contextualDraft.current !== params.prompt) {
+      contextualDraft.current = params.prompt;
+      setDraft(params.prompt);
+      if (active.current) drafts.current[active.current] = params.prompt;
+      composer.current?.focus();
+    }
+  }, [loading, params.prompt]);
+  async function switchTo(c: Conversation) {
+    setHistoryOpen(false);
+    setGradeOpen(false);
+    setError("");
+    scroll.current = true;
+    setLoading(true);
+    active.current = c.id;
+    setConversation(c);
+    setGrade(c.grade);
+    setDraft(drafts.current[c.id] ?? "");
+    setMessages([]);
+    try {
+      await selectConversation(c.id);
+      await refresh(c.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not load chat.");
+    } finally {
+      setLoading(false);
+    }
   }
   async function newChat() {
-    try {await switchTo(await createConversation(grade));}
-    catch(e) {setError(e instanceof Error ? e.message : "Could not create chat.");}
+    try {
+      await switchTo(await createConversation(grade));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not create chat.");
+    }
   }
-  function changeDraft(value:string) {setDraft(value);if(active.current)drafts.current[active.current]=value;}
-  async function submit(retryId?:string) {
+  function changeDraft(value: string) {
+    setDraft(value);
+    if (active.current) drafts.current[active.current] = value;
+  }
+  async function submit(retryId?: string) {
     if (operation.current || !conversation || (!retryId && !draft.trim())) return;
-    const id=conversation.id; const text=draft; const selectedGrade=grade;
-    operation.current=true;setBusy(true);setPendingConversation(id);setError("");scroll.current=true;
-    const saved=async () => {
-      if(!retryId) {drafts.current[id]="";if(active.current===id)setDraft("");}
+    const id = conversation.id;
+    const text = draft;
+    const selectedGrade = grade;
+    operation.current = true;
+    setBusy(true);
+    setPendingConversation(id);
+    setError("");
+    scroll.current = true;
+    const saved = async () => {
+      if (!retryId) {
+        drafts.current[id] = "";
+        if (active.current === id) setDraft("");
+      }
       await refresh(id);
     };
-    const context = (params.studentId || params.conceptId || params.screenContext) ? {
-      student_id: params.studentId,
-      concept_id: params.conceptId,
-      screen_context: params.screenContext,
-    } : undefined;
-    try {if(retryId)await retryMessage(retryId,saved);else await sendMessage(id,text,selectedGrade,saved,undefined,context);}
-    catch(e) {if(mounted.current)setError(e instanceof Error ? e.message : "Chat could not be saved.");}
-    finally {
-      operation.current=false;
-      if(mounted.current) {
-        setBusy(false);setPendingConversation(null);
-        try {await refresh(active.current ?? id);} catch {setError("Unable to reload saved messages.");}
+    const context =
+      params.studentId || params.conceptId || params.screenContext
+        ? {
+            student_id: params.studentId,
+            concept_id: params.conceptId,
+            screen_context: params.screenContext,
+          }
+        : undefined;
+    try {
+      if (retryId) await retryMessage(retryId, saved);
+      else await sendMessage(id, text, selectedGrade, saved, undefined, context);
+    } catch (e) {
+      if (mounted.current) setError(e instanceof Error ? e.message : "Chat could not be saved.");
+    } finally {
+      operation.current = false;
+      if (mounted.current) {
+        setBusy(false);
+        setPendingConversation(null);
+        try {
+          await refresh(active.current ?? id);
+        } catch {
+          setError("Unable to reload saved messages.");
+        }
       }
     }
   }
-  function renderMessage({item}:{item:ChatMessage}) {
-    if(item.role==="teacher") return <View style={styles.userRow}><View style={styles.userBubble}>
-      <Text selectable style={styles.userText}>{item.text}</Text>
-    </View>{item.status==="failed" ? <View style={{marginTop:10,gap:4,maxWidth:"88%"}}>
-        <AppText variant="small" muted>{chatErrorSummary(item.error)}</AppText>
-        <View style={{flexDirection:"row",flexWrap:"wrap",gap:16}}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Retry failed question" disabled={busy||messages.some(m => m.status==="pending")} onPress={() => void submit(item.id)} style={styles.retry}>
-          <Ionicons name="refresh-outline" size={16} color={colors.forest} /><AppText variant="small" style={{color:colors.forest}}>Retry</AppText>
-        </Pressable>
-        <Button label="Check connection" accessibilityLabel="Check AI connection" icon="link-outline" variant="secondary" onPress={()=>router.push('/connection')}/>
+
+  function renderMessage({ item }: { item: ChatMessage }) {
+    if (item.role === "teacher")
+      return (
+        <View style={styles.userRow}>
+          <View style={styles.userBubble}>
+            <Text selectable style={styles.userText}>
+              {item.text}
+            </Text>
+          </View>
+          {item.status === "failed" ? (
+            <View style={styles.failed}>
+              <AppText variant="small" muted>
+                {chatErrorSummary(item.error)}
+              </AppText>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 14 }}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Retry failed question"
+                  disabled={busy || messages.some((m) => m.status === "pending")}
+                  onPress={() => void submit(item.id)}
+                  style={styles.retry}
+                >
+                  <Ionicons name="refresh-outline" size={15} color={P.forest} />
+                  <Text style={styles.retryText}>Retry</Text>
+                </Pressable>
+                <Button
+                  label="Check connection"
+                  accessibilityLabel="Check AI connection"
+                  icon="link-outline"
+                  variant="secondary"
+                  onPress={() => router.push("/connection")}
+                />
+              </View>
+            </View>
+          ) : null}
         </View>
-      </View> : null}</View>;
-    if(item.conversation_id?.startsWith("legacy-") && item.text.startsWith("The local RAG pipeline exists as Python"))return <View style={styles.assistantRow}>
-      <Pressable accessibilityRole="button" onPress={()=>setLegacyOpen(old=>({...old,[item.id]:!old[item.id]}))}><AppText variant="small" muted>Earlier service notice (not an AI answer) {legacyOpen[item.id] ? "-" : "+"}</AppText></Pressable>
-      {legacyOpen[item.id] ? <Text selectable style={styles.sourceText}>{item.text}</Text> : null}
-    </View>;
+      );
+    if (
+      item.conversation_id?.startsWith("legacy-") &&
+      item.text.startsWith("The local RAG pipeline exists as Python")
+    )
+      return (
+        <View style={styles.assistantRow}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setLegacyOpen((old) => ({ ...old, [item.id]: !old[item.id] }))}
+          >
+            <AppText variant="small" muted>
+              Earlier service notice (not an AI answer) {legacyOpen[item.id] ? "-" : "+"}
+            </AppText>
+          </Pressable>
+          {legacyOpen[item.id] ? (
+            <Text selectable style={styles.sourceText}>
+              {item.text}
+            </Text>
+          ) : null}
+        </View>
+      );
     let scheduleDraft: GeneralSchedule | null = null;
     if (item.request_json) {
       try {
@@ -141,92 +406,878 @@ export default function ChatbotScreen({embedded=false}:{embedded?:boolean}={}) {
         if (meta?.schedule && meta.schedule.kind === "general-schedule") {
           scheduleDraft = meta.schedule as GeneralSchedule;
         }
-      } catch { /* Ignore non-schedule metadata */ }
+      } catch {
+        /* Ignore non-schedule metadata */
+      }
     }
-    return <View style={styles.assistantRow}><AppText variant="small" muted style={{marginBottom:8}}>Calcmate</AppText>
-      <AssistantMessage text={item.text} onResize={scrollToEnd} />
-      {scheduleDraft ? <ScheduleCard draft={scheduleDraft} savedId={scheduleDraft.id} /> : null}
-      <Sources json={item.sources_json} />
-    </View>;
-  }
-  const pending=messages.some(m => m.status==="pending");
-  return <SafeAreaView style={styles.safe} edges={embedded?["top","left","right"]:["top","bottom","left","right"]}>
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS==="ios" ? "padding" : "height"} keyboardVerticalOffset={0}>
-      <View style={styles.header}>
-        {!embedded ? <IconAction name="chevron-back" label="Back" onPress={() => router.back()} /> : null}
-        <View style={styles.headerTitle}><AppText variant="subheading">Assistant</AppText>
-          <Pressable accessibilityRole="button" accessibilityLabel="Select teaching grade" onPress={() => setGradeOpen(!gradeOpen)}>
-            <AppText variant="small" muted>Grade {grade} Maths <Ionicons name="chevron-down" size={12} /></AppText>
-          </Pressable>
+    return (
+      <View style={styles.assistantRow}>
+        <View style={styles.assistantHead}>
+          <Mark size={24} />
+          <Text style={styles.assistantName}>Calcmate</Text>
         </View>
-        <IconAction name="time-outline" label="Conversation history" onPress={() => {Keyboard.dismiss();setHistoryOpen(true);}} />
-        <IconAction name="create-outline" label="New chat" onPress={() => void newChat()} disabled={loading} />
+        <View style={styles.assistantBody}>
+          <AssistantMessage text={item.text} onResize={scrollToEnd} />
+          {scheduleDraft ? <ScheduleCard draft={scheduleDraft} savedId={scheduleDraft.id} /> : null}
+          <Sources json={item.sources_json} />
+        </View>
       </View>
-      {gradeOpen ? <View style={styles.grades}>{[1,2,3,4,5].map(g => <Pressable key={g} accessibilityRole="radio" accessibilityState={{selected:grade===g}}
-        onPress={() => {setGrade(g);setGradeOpen(false);}} style={[styles.grade,grade===g && {borderColor:colors.forest}]}>
-        <AppText>Grade {g}</AppText>
-      </Pressable>)}</View> : null}
-      {offline || !configured ? <View style={styles.notice}><Ionicons name="cloud-offline-outline" size={15} color={colors.charcoalMuted} />
-        <AppText variant="small" muted style={{flex:1}}>{offline ? "Offline. Saved chats remain available." : "Connect your school server for AI answers."}</AppText>
-        <Button label="Connect" accessibilityLabel="Set up AI connection" variant="secondary" onPress={()=>router.push('/connection')}/>
-      </View> : null}
-      {error||gradeError ? <Text accessibilityLiveRegion="polite" style={styles.error}>{error||gradeError}</Text> : null}
-      {loading ? <View style={styles.loading}><ActivityIndicator color={colors.forest} /><AppText muted>Opening conversation...</AppText></View> :
-        <FlatList ref={list} style={styles.flex} data={messages} keyExtractor={item => item.id} renderItem={renderMessage}
-          initialNumToRender={6} maxToRenderPerBatch={4} windowSize={5} removeClippedSubviews={false}
-          contentContainerStyle={styles.chatContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"
-          onContentSizeChange={scrollToEnd} onScroll={event => {const {contentOffset,contentSize,layoutMeasurement}=event.nativeEvent;scroll.current=contentSize.height-contentOffset.y-layoutMeasurement.height<100;}} scrollEventThrottle={80}
-          ListEmptyComponent={<View style={styles.empty}>
-            <Ionicons name="chatbubble-outline" size={24} color={colors.forest} /><AppText variant="heading">What are we teaching today?</AppText>
-            <AppText muted>Maths ideas for your classroom.</AppText>
-            <View style={{gap:2,width:"100%",marginTop:20}}>{prompts.map(prompt => <Pressable key={prompt} accessibilityRole="button" onPress={() => {changeDraft(prompt);composer.current?.focus();}} style={styles.prompt}>
-              <AppText style={{flex:1}}>{prompt}</AppText><Ionicons name="arrow-up-outline" size={18} color={colors.forest} />
-            </Pressable>)}</View>
-          </View>}
-          ListFooterComponent={pending ? <View accessibilityLiveRegion="polite" style={styles.typing}><ActivityIndicator size="small" color={colors.forest} /><AppText muted>Calcmate is thinking...</AppText></View> : null} />}
-      {pendingConversation && pendingConversation!==conversation?.id ? <AppText variant="small" muted style={styles.waiting}>Another conversation is waiting for a response.</AppText> : null}
-      <View style={styles.composerArea}><View style={styles.composerBox}>
-        <TextInput ref={composer} testID="chat-composer" accessibilityLabel="Teacher question" multiline value={draft} onChangeText={changeDraft}
-          placeholder="Ask about teaching Maths..." placeholderTextColor={colors.charcoalMuted} maxLength={2000}
-          style={styles.input} textAlignVertical="top" editable={!loading} />
-        <Pressable testID="chat-send" accessibilityRole="button" accessibilityLabel="Send question" accessibilityState={{disabled:busy||pending||!draft.trim()||loading}}
-          disabled={busy||pending||!draft.trim()||loading} onPress={() => void submit()} style={[styles.send,(busy||pending||!draft.trim()||loading)&&styles.disabled]}>
-          {busy ? <ActivityIndicator size="small" color={colors.white} /> : <Ionicons name="arrow-up" size={22} color={colors.white} />}
-        </Pressable>
-      </View></View>
-    </KeyboardAvoidingView>
-    <Modal visible={historyOpen} animationType="fade" onRequestClose={() => setHistoryOpen(false)}>
-      <SafeAreaView style={styles.safe}><View style={styles.header}><AppText variant="heading" style={{flex:1}}>Conversations</AppText><IconAction name="close" label="Close history" onPress={() => setHistoryOpen(false)} /></View>
-        <Pressable style={styles.historyNew} onPress={() => void newChat()} accessibilityRole="button"><Ionicons name="add" size={20} color={colors.forest} /><AppText>New chat</AppText></Pressable>
-        <FlatList data={history} keyExtractor={c => c.id} renderItem={({item}) => <Pressable onPress={() => void switchTo(item)} accessibilityRole="button" style={[styles.historyItem,item.id===conversation?.id&&{backgroundColor:colors.sageLight}]}>
-          <Text numberOfLines={2} style={styles.historyTitle}>{item.title}</Text><AppText variant="small" muted>Grade {item.grade} Maths | {item.updated_at.slice(0,10)}</AppText>
-        </Pressable>} />
-        <AppText variant="small" muted style={{padding:20}}>Each question is answered separately; earlier messages are not included.</AppText>
-      </SafeAreaView>
-    </Modal>
-  </SafeAreaView>;
+    );
+  }
+
+  const pending = messages.some((m) => m.status === "pending");
+  const canSend = !(busy || pending || !draft.trim() || loading);
+
+  
+
+function EmptyFloatingItem({
+  icon,
+  color,
+  size,
+  style,
+  delay = 0,
+}: {
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+  color: string;
+  size: number;
+  style?: object;
+  delay?: number;
+}) {
+  const motion = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.timing(motion, {
+          toValue: 1,
+          duration: 1800,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(motion, {
+          toValue: 0,
+          duration: 1800,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    animation.start();
+    return () => animation.stop();
+  }, [motion, delay]);
+
+  const translateY = motion.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -10],
+  });
+
+  const rotate = motion.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["-8deg", "8deg"],
+  });
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        emptyStyles.floatingItem,
+        {
+          width: size,
+          height: size,
+          borderRadius: size * 0.3,
+          backgroundColor: color,
+          transform: [{ perspective: 700 }, { translateY }, { rotate }],
+        },
+        style,
+      ]}
+    >
+      <Ionicons
+        name={icon}
+        size={size * 0.46}
+        color={EMPTY_COLORS.forest}
+      />
+    </Animated.View>
+  );
 }
-const styles=StyleSheet.create({
-  flex:{flex:1},safe:{flex:1,backgroundColor:colors.ivory},
-  header:{minHeight:68,paddingVertical:8,paddingHorizontal:12,flexDirection:"row",alignItems:"center",gap:6,borderBottomWidth:1,borderColor:colors.line},
-  headerTitle:{flex:1,minWidth:0,gap:3},iconButton:{width:48,height:48,alignItems:"center",justifyContent:"center"},
-  tooltip:{position:"absolute",top:42,right:0,backgroundColor:colors.charcoal,padding:6,zIndex:20,minWidth:95,borderRadius:4},
-  grades:{flexDirection:"row",justifyContent:"space-evenly",padding:12,gap:8},grade:{paddingVertical:10,paddingHorizontal:8,borderBottomWidth:2,borderColor:colors.line},
-  notice:{flexDirection:"row",alignItems:"center",gap:8,paddingHorizontal:20,paddingVertical:10,backgroundColor:colors.sageLight},
-  error:{color:colors.danger,paddingHorizontal:20,paddingVertical:8,fontSize:13,lineHeight:19},
-  loading:{flex:1,alignItems:"center",justifyContent:"center",gap:12},chatContent:{padding:16,paddingBottom:24,flexGrow:1,width:"100%",maxWidth:840,alignSelf:"center"},
-  empty:{flex:1,alignItems:"center",justifyContent:"center",gap:12,paddingVertical:28},
-  prompt:{minHeight:58,paddingVertical:14,flexDirection:"row",alignItems:"center",gap:12,borderBottomWidth:1,borderColor:colors.line},
-  userRow:{alignItems:"flex-end",marginVertical:12},userBubble:{maxWidth:"88%",backgroundColor:colors.sageLight,padding:14,borderRadius:8},
-  userText:{color:colors.charcoal,fontSize:16,lineHeight:25},assistantRow:{marginTop:12,marginBottom:20,minWidth:0},
-  typing:{flexDirection:"row",alignItems:"center",gap:10,paddingVertical:18},
-  retry:{minHeight:48,flexDirection:"row",alignItems:"center",gap:6},source:{borderLeftWidth:2,borderColor:colors.sage,paddingLeft:10,gap:6},
-  sourceText:{fontSize:13,lineHeight:20,color:colors.charcoalMuted},
-  composerArea:{paddingHorizontal:16,paddingTop:10,paddingBottom:12,backgroundColor:colors.ivory,borderTopWidth:1,borderColor:colors.line},
-  composerBox:{flexDirection:"row",alignItems:"flex-end",gap:10,borderWidth:1,borderColor:colors.sage,borderRadius:8,padding:8,backgroundColor:colors.paper},
-  input:{flex:1,minHeight:42,maxHeight:140,paddingHorizontal:6,paddingVertical:10,fontSize:16,lineHeight:23,color:colors.charcoal},
-  send:{width:48,height:48,borderRadius:6,alignItems:"center",justifyContent:"center",backgroundColor:colors.forest},
-  disabled:{opacity:0.4},waiting:{paddingHorizontal:20,paddingTop:6},historyNew:{minHeight:56,flexDirection:"row",alignItems:"center",gap:10,paddingHorizontal:20},
-  historyItem:{paddingHorizontal:20,paddingVertical:16,borderBottomWidth:1,borderColor:colors.line,gap:6},
-  historyTitle:{fontSize:16,lineHeight:23,fontWeight:"600",color:colors.charcoal}
+
+function EmptyTypingTitle() {
+  const [text, setText] = useState("");
+  const cursorOpacity = useRef(new Animated.Value(1)).current;
+  const title = "What are we teaching today?";
+
+  useEffect(() => {
+    let index = 0;
+
+    const timer = setInterval(() => {
+      index += 1;
+      setText(title.slice(0, index));
+
+      if (index >= title.length) {
+        clearInterval(timer);
+      }
+    }, 65);
+
+    const cursorAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(cursorOpacity, {
+          toValue: 0,
+          duration: 500,
+          useNativeDriver: true,
+        }),
+        Animated.timing(cursorOpacity, {
+          toValue: 1,
+          duration: 500,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    cursorAnimation.start();
+
+    return () => {
+      clearInterval(timer);
+      cursorAnimation.stop();
+    };
+  }, [cursorOpacity]);
+
+  return (
+    <View style={emptyStyles.titleRow}>
+      <Text style={emptyStyles.emptyTitle}>{text}</Text>
+      <Animated.View
+        style={[
+          emptyStyles.cursor,
+          { opacity: cursorOpacity },
+        ]}
+      />
+    </View>
+  );
+}
+
+function EmptyClassroomArtwork() {
+  const bookMotion = useRef(new Animated.Value(0)).current;
+  const sparkleMotion = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const bookAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(bookMotion, {
+          toValue: 1,
+          duration: 2000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(bookMotion, {
+          toValue: 0,
+          duration: 2000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    const sparkleAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(sparkleMotion, {
+          toValue: 1,
+          duration: 900,
+          useNativeDriver: true,
+        }),
+        Animated.timing(sparkleMotion, {
+          toValue: 0,
+          duration: 900,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    bookAnimation.start();
+    sparkleAnimation.start();
+
+    return () => {
+      bookAnimation.stop();
+      sparkleAnimation.stop();
+    };
+  }, [bookMotion, sparkleMotion]);
+
+  const bookY = bookMotion.interpolate({
+    inputRange: [0, 1],
+    outputRange: [4, -9],
+  });
+
+  const sparkleScale = sparkleMotion.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.7, 1.15],
+  });
+
+  return (
+    <View style={emptyStyles.artwork}>
+      <View style={emptyStyles.halo} />
+      <View style={emptyStyles.haloInner} />
+
+      <Animated.View
+        style={[
+          emptyStyles.books,
+          {
+            transform: [
+              { translateY: bookY },
+              { perspective: 700 },
+              { rotate: "-7deg" },
+            ],
+          },
+        ]}
+      >
+        <View style={[emptyStyles.book, emptyStyles.bookBack]}>
+          <View style={emptyStyles.bookPages} />
+        </View>
+
+        <View style={[emptyStyles.book, emptyStyles.bookMiddle]}>
+          <View style={emptyStyles.bookPages} />
+        </View>
+
+        <View style={[emptyStyles.book, emptyStyles.bookFront]}>
+          <View style={emptyStyles.bookStripe} />
+          <View style={emptyStyles.bookPages} />
+        </View>
+      </Animated.View>
+
+      <EmptyFloatingItem
+        icon="pencil"
+        color={EMPTY_COLORS.yellow}
+        size={51}
+        delay={150}
+        style={{ position: "absolute", top: 9, right: "15%" }}
+      />
+
+      <EmptyFloatingItem
+        icon="calculator"
+        color={EMPTY_COLORS.blue}
+        size={53}
+        delay={450}
+        style={{ position: "absolute", bottom: 9, right: "8%" }}
+      />
+
+      <EmptyFloatingItem
+        icon="shapes"
+        color={EMPTY_COLORS.coral}
+        size={46}
+        delay={300}
+        style={{ position: "absolute", bottom: 13, left: "9%" }}
+      />
+
+      <Animated.View
+        style={[
+          emptyStyles.sparkle,
+          { transform: [{ scale: sparkleScale }] },
+        ]}
+      >
+        <Ionicons name="sparkles" size={25} color="#D6A82D" />
+      </Animated.View>
+
+      <View style={emptyStyles.star}>
+        <Ionicons name="star" size={13} color={EMPTY_COLORS.coral} />
+      </View>
+    </View>
+  );
+}
+
+  return (
+    <SafeAreaView style={styles.safe} edges={embedded ? ["top", "left", "right"] : ["top", "bottom", "left", "right"]}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={0}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={styles.headerSide}>
+            {!embedded ? (
+              <IconAction name="chevron-back" label="Back" onPress={() => router.back()} />
+            ) : (
+              <IconAction name="time-outline" label="Conversation history" onPress={() => { Keyboard.dismiss(); setHistoryOpen(true); }} />
+            )}
+          </View>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Select teaching grade"
+            onPress={() => setGradeOpen(!gradeOpen)}
+            style={styles.headerTitle}
+          >
+            <Text style={styles.title}>Calcmate</Text>
+            <View style={styles.gradePill}>
+              <Text style={styles.gradePillText}>Grade {grade} · Maths</Text>
+              <Ionicons name={gradeOpen ? "chevron-up" : "chevron-down"} size={11} color={P.gold} />
+            </View>
+          </Pressable>
+
+          <View style={[styles.headerSide, { justifyContent: "flex-end" }]}>
+            {!embedded ? (
+              <IconAction name="time-outline" label="Conversation history" onPress={() => { Keyboard.dismiss(); setHistoryOpen(true); }} />
+            ) : null}
+            <IconAction name="create-outline" label="New chat" onPress={() => void newChat()} disabled={loading} />
+          </View>
+        </View>
+
+        {/* Grade picker */}
+        {gradeOpen ? (
+          <View style={styles.grades}>
+            {[1, 2, 3, 4, 5].map((g) => {
+              const selected = grade === g;
+              return (
+                <Pressable
+                  key={g}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  onPress={() => {
+                    setGrade(g);
+                    setGradeOpen(false);
+                  }}
+                  style={[styles.grade, selected && styles.gradeSelected]}
+                >
+                  <Text style={[styles.gradeText, selected && styles.gradeTextSelected]}>Grade {g}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
+
+        {/* Notices */}
+        {offline || !configured ? (
+          <View style={styles.notice}>
+            <Ionicons name="cloud-offline-outline" size={16} color={P.gold} />
+            <Text style={styles.noticeText}>
+              {offline ? "Offline. Saved chats remain available." : "Connect your school server for AI answers."}
+            </Text>
+            <Button
+              label="Connect"
+              accessibilityLabel="Set up AI connection"
+              variant="secondary"
+              onPress={() => router.push("/connection")}
+            />
+          </View>
+        ) : null}
+        {error || gradeError ? (
+          <Text accessibilityLiveRegion="polite" style={styles.error}>
+            {error || gradeError}
+          </Text>
+        ) : null}
+
+        {/* Conversation */}
+        {loading ? (
+          <View style={styles.loading}>
+            <ActivityIndicator color={P.forest} />
+            <Text style={styles.loadingText}>Opening conversation…</Text>
+          </View>
+        ) : (
+          <FlatList
+            ref={list}
+            style={styles.flex}
+            data={messages}
+            keyExtractor={(item) => item.id}
+            renderItem={renderMessage}
+            initialNumToRender={6}
+            maxToRenderPerBatch={4}
+            windowSize={5}
+            removeClippedSubviews={false}
+            contentContainerStyle={styles.chatContent}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            onContentSizeChange={scrollToEnd}
+            onScroll={(event) => {
+              const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+              scroll.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 100;
+            }}
+            scrollEventThrottle={80}
+            ListEmptyComponent={
+              <View style={styles.empty}>
+                <EmptyClassroomArtwork />
+
+                <EmptyTypingTitle />
+
+                <Text style={emptyStyles.subtitle}>
+                  Every great lesson starts with a plan.
+                </Text>
+              </View>
+            }
+            ListFooterComponent={
+              pending ? (
+                <View accessibilityLiveRegion="polite" style={styles.typing}>
+                  <ActivityIndicator size="small" color={P.gold} />
+                  <Text style={styles.typingText}>Calcmate is thinking…</Text>
+                </View>
+              ) : null
+            }
+          />
+        )}
+
+        {pendingConversation && pendingConversation !== conversation?.id ? (
+          <AppText variant="small" muted style={styles.waiting}>
+            Another conversation is waiting for a response.
+          </AppText>
+        ) : null}
+
+        {/* Composer */}
+        <View style={styles.composerArea}>
+          <View style={styles.composerBox}>
+            <TextInput
+              ref={composer}
+              testID="chat-composer"
+              accessibilityLabel="Teacher question"
+              multiline
+              value={draft}
+              onChangeText={changeDraft}
+              placeholder="Ask about teaching Maths…"
+              placeholderTextColor="#A5AAA3"
+              maxLength={2000}
+              style={styles.input}
+              textAlignVertical="center"
+              editable={!loading}
+            />
+            <Pressable
+              testID="chat-send"
+              accessibilityRole="button"
+              accessibilityLabel="Send question"
+              accessibilityState={{ disabled: !canSend }}
+              disabled={!canSend}
+              onPress={() => void submit()}
+              style={({ pressed }) => [
+                styles.send,
+                !canSend && styles.sendDisabled,
+                pressed && canSend && { opacity: 0.85, transform: [{ scale: 0.95 }] },
+              ]}
+            >
+              {busy ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Ionicons name="arrow-up" size={20} color={canSend ? "#F3E2AE" : "#FFFFFF"} />
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+
+      {/* History */}
+      <Modal visible={historyOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setHistoryOpen(false)}>
+        <SafeAreaView style={styles.safe}>
+          <View style={styles.historyHeader}>
+            <Text style={styles.historyHeading}>Conversations</Text>
+            <IconAction name="close" label="Close history" onPress={() => setHistoryOpen(false)} />
+          </View>
+          <Pressable style={styles.historyNew} onPress={() => void newChat()} accessibilityRole="button">
+            <View style={styles.historyNewIcon}>
+              <Ionicons name="add" size={18} color="#F3E2AE" />
+            </View>
+            <Text style={styles.historyNewText}>New chat</Text>
+          </Pressable>
+          <FlatList
+            data={history}
+            keyExtractor={(c) => c.id}
+            contentContainerStyle={{ paddingHorizontal: 16 }}
+            renderItem={({ item }) => {
+              const selected = item.id === conversation?.id;
+              return (
+                <Pressable
+                  onPress={() => void switchTo(item)}
+                  accessibilityRole="button"
+                  style={[styles.historyItem, selected && styles.historyItemActive]}
+                >
+                  <Text numberOfLines={2} style={styles.historyTitle}>
+                    {item.title}
+                  </Text>
+                  <Text style={styles.historyMeta}>
+                    Grade {item.grade} Maths · {item.updated_at.slice(0, 10)}
+                  </Text>
+                </Pressable>
+              );
+            }}
+          />
+          <Text style={styles.historyFoot}>Each question is answered separately; earlier messages are not included.</Text>
+        </SafeAreaView>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  flex: { flex: 1 },
+  safe: { flex: 1, backgroundColor: P.bg },
+
+  /* Header */
+  header: {
+    height: 60,
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: P.line,
+    backgroundColor: P.bg,
+  },
+  headerSide: { width: 96, flexDirection: "row", alignItems: "center" },
+  headerTitle: { flex: 1, alignItems: "center", justifyContent: "center", gap: 3 },
+  title: { fontFamily: SERIF, fontSize: 18, fontWeight: "700", color: P.ink, letterSpacing: 0.2 },
+  gradePill: { flexDirection: "row", alignItems: "center", gap: 4 },
+  gradePillText: { fontSize: 11, color: P.gold, fontWeight: "600", letterSpacing: 0.6 },
+  iconButton: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+
+  /* Grade picker */
+  grades: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: P.line,
+    backgroundColor: P.bg,
+  },
+  grade: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: P.line,
+    backgroundColor: P.card,
+  },
+  gradeSelected: { backgroundColor: P.forest, borderColor: P.forest },
+  gradeText: { fontSize: 12, fontWeight: "600", color: P.body },
+  gradeTextSelected: { color: "#F3E2AE" },
+
+  /* Notices */
+  notice: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginHorizontal: 16,
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: P.goldSoft,
+  },
+  noticeText: { flex: 1, fontSize: 12, lineHeight: 17, color: P.body },
+  error: {
+    marginHorizontal: 16,
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: "#F8E9E5",
+    color: P.danger,
+    fontSize: 13,
+    lineHeight: 19,
+    overflow: "hidden",
+  },
+
+  loading: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
+  loadingText: { color: P.muted, fontSize: 13 },
+
+  /* Messages */
+  chatContent: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 24,
+    flexGrow: 1,
+    width: "100%",
+    maxWidth: 760,
+    alignSelf: "center",
+  },
+  userRow: { alignItems: "flex-end", marginVertical: 10 },
+  userBubble: {
+    maxWidth: "86%",
+    backgroundColor: P.forest,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderBottomRightRadius: 6,
+  },
+  userText: { color: "#FBF8EE", fontSize: 15.5, lineHeight: 23 },
+  failed: { marginTop: 10, gap: 6, maxWidth: "88%", alignItems: "flex-end" },
+  retry: { minHeight: 40, flexDirection: "row", alignItems: "center", gap: 6 },
+  retryText: { color: P.forest, fontSize: 13, fontWeight: "600" },
+
+  assistantRow: { marginTop: 14, marginBottom: 22, minWidth: 0 },
+  assistantHead: { flexDirection: "row", alignItems: "center", gap: 9, marginBottom: 10 },
+  assistantName: { fontFamily: SERIF, fontSize: 14, fontWeight: "700", color: P.ink, letterSpacing: 0.2 },
+  assistantBody: { paddingLeft: 33, minWidth: 0 },
+
+  typing: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 16, paddingLeft: 33 },
+  typingText: { color: P.muted, fontSize: 13 },
+
+  /* Sources */
+  sourcesToggle: {
+    alignSelf: "flex-start",
+    minHeight: 34,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: P.line,
+    backgroundColor: P.card,
+  },
+  sourcesToggleText: { fontSize: 12, fontWeight: "600", color: P.body },
+  source: { marginTop: 10, borderLeftWidth: 2, borderColor: P.gold, paddingLeft: 12, gap: 6 },
+  sourceText: { fontSize: 13, lineHeight: 20, color: P.muted },
+
+  /* Empty state */
+  empty: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 28 },
+  emptyRing: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: P.goldSoft,
+    marginBottom: 20,
+  },
+  emptyTitle: {
+    fontFamily: SERIF,
+    fontSize: 26,
+    lineHeight: 33,
+    fontWeight: "700",
+    color: P.ink,
+    textAlign: "center",
+    letterSpacing: -0.3,
+  },
+  emptySub: { marginTop: 8, fontSize: 14, color: P.muted, textAlign: "center" },
+  promptList: { width: "100%", gap: 10, marginTop: 32 },
+  prompt: {
+    minHeight: 56,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: P.line,
+    backgroundColor: P.card,
+  },
+  promptText: { flex: 1, fontSize: 14, lineHeight: 20, color: P.body },
+
+  waiting: { paddingHorizontal: 20, paddingTop: 6 },
+
+  /* Composer */
+  composerArea: { paddingHorizontal: 14, paddingTop: 8, paddingBottom: 10, backgroundColor: P.bg },
+  composerBox: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 8,
+    paddingVertical: 7,
+    paddingLeft: 16,
+    paddingRight: 7,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: P.line,
+    backgroundColor: P.card,
+    shadowColor: "#1C2B23",
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
+    width: "100%",
+    maxWidth: 760,
+    alignSelf: "center",
+  },
+  input: {
+    flex: 1,
+    minHeight: 40,
+    maxHeight: 130,
+    paddingTop: Platform.OS === "ios" ? 10 : 8,
+    paddingBottom: Platform.OS === "ios" ? 10 : 8,
+    fontSize: 15.5,
+    lineHeight: 22,
+    color: P.ink,
+  },
+  send: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: P.forest,
+  },
+  sendDisabled: { backgroundColor: P.disabled },
+
+  /* History */
+  historyHeader: {
+    height: 60,
+    paddingLeft: 22,
+    paddingRight: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  historyHeading: { fontFamily: SERIF, fontSize: 22, fontWeight: "700", color: P.ink },
+  historyNew: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    minHeight: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: P.sage,
+  },
+  historyNewIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    backgroundColor: P.forest,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  historyNewText: { fontSize: 15, fontWeight: "600", color: P.ink },
+  historyItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    borderRadius: 14,
+    gap: 5,
+  },
+  historyItemActive: { backgroundColor: P.goldSoft },
+  historyTitle: { fontSize: 15, lineHeight: 21, fontWeight: "600", color: P.ink },
+  historyMeta: { fontSize: 12, color: P.muted },
+  historyFoot: { padding: 20, fontSize: 12, lineHeight: 17, color: P.muted, textAlign: "center" },
+});
+
+const emptyStyles = StyleSheet.create({
+  artwork: {
+    width: "100%",
+    maxWidth: 340,
+    height: 175,
+    alignSelf: "center",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+
+  halo: {
+    position: "absolute",
+    width: 148,
+    height: 148,
+    borderRadius: 74,
+    backgroundColor: "#E5EBDD",
+  },
+
+  haloInner: {
+    position: "absolute",
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    backgroundColor: "#D2E1CC",
+  },
+
+  books: {
+    position: "absolute",
+    width: 100,
+    height: 94,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  book: {
+    position: "absolute",
+    width: 91,
+    height: 26,
+    borderRadius: 6,
+    borderBottomWidth: 4,
+    borderBottomColor: "rgba(32,58,46,0.13)",
+    justifyContent: "center",
+    paddingHorizontal: 8,
+  },
+
+  bookBack: {
+    top: 11,
+    backgroundColor: "#DCD3F0",
+    transform: [{ rotate: "9deg" }, { translateX: 2 }],
+  },
+
+  bookMiddle: {
+    top: 34,
+    backgroundColor: "#F4D778",
+    transform: [{ rotate: "-3deg" }],
+  },
+
+  bookFront: {
+    top: 56,
+    backgroundColor: "#F0A18C",
+    transform: [{ rotate: "4deg" }],
+  },
+
+  bookStripe: {
+    position: "absolute",
+    left: 13,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    backgroundColor: "rgba(255,255,255,0.65)",
+  },
+
+  bookPages: {
+    height: 3,
+    backgroundColor: "rgba(255,255,255,0.8)",
+    borderRadius: 2,
+    marginLeft: 10,
+    marginRight: 4,
+  },
+
+  floatingItem: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.9)",
+    shadowColor: "#33483A",
+    shadowOpacity: 0.16,
+    shadowRadius: 9,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 5,
+  },
+
+  sparkle: {
+    position: "absolute",
+    top: 7,
+    left: "25%",
+  },
+
+  star: {
+    position: "absolute",
+    top: 38,
+    right: "25%",
+  },
+
+  titleRow: {
+    minHeight: 34,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    flexWrap: "wrap",
+    marginTop: 5,
+  },
+
+  emptyTitle: {
+    color: EMPTY_COLORS.forest,
+    fontSize: 21,
+    fontWeight: "700",
+    textAlign: "center",
+    letterSpacing: -0.5,
+  },
+
+  cursor: {
+    width: 2,
+    height: 23,
+    backgroundColor: EMPTY_COLORS.forest,
+    marginLeft: 3,
+  },
+
+  subtitle: {
+    color: EMPTY_COLORS.muted,
+    fontSize: 13,
+    textAlign: "center",
+    marginTop: 9,
+    lineHeight: 20,
+  },
 });

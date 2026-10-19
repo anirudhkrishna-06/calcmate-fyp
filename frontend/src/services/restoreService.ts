@@ -45,6 +45,7 @@ const tables:[string,string,string[]][]=[
   ["concepts","mathsConcepts",["id","workspace_id","title","grade","prerequisite_id","created_at","updated_at","learning_objective","coverage_status","is_active","subject_area"]],
   ["attendance","attendance",["id","workspace_id","student_id","date","status","created_at","updated_at"]],
   ["assessments","assessments",["id","workspace_id","student_id","concept_id","date","score","maximum","created_at","updated_at"]],
+  ["assessment_metadata","assessmentMetadata",["workspace_id","assessment_id","kind","title"]],
   ["competencies","competencies",["id","workspace_id","student_id","concept_id","mastery","created_at","updated_at"]],
   ["observations","observations",["id","workspace_id","student_id","note","created_at","updated_at"]],
   ["schedules","schedules",["id","workspace_id","data","created_at","updated_at"]],
@@ -55,7 +56,8 @@ const tables:[string,string,string[]][]=[
   ["class_sessions","class_sessions",["id","workspace_id","schedule_id","grade","date","started_at","ended_at","status","current_block_index","elapsed_seconds","created_at","updated_at"]],
   ["session_attendance_events","session_attendance_events",["id","workspace_id","session_id","student_id","event_type","recorded_at"]],
   ["session_outcomes","session_outcomes",["id","workspace_id","session_id","block_id","delivered","notes","created_at","updated_at"]],
-  ["assessment_origins","assessment_origins",["workspace_id","assessment_id","session_id","block_id"]]
+  ["assessment_origins","assessment_origins",["workspace_id","assessment_id","session_id","block_id"]],
+  ["notifications","notifications",["id","workspace_id","type","title","body","grade","concept_id","read_at","created_at"]]
 ];
 export async function restoreBackupJson(json:string) {
   if(json.length>10*1024*1024)throw new Error("Backup exceeds the 10 MB limit.");
@@ -84,8 +86,8 @@ export async function restoreBackupJson(json:string) {
       }
       const text=(field:string)=>typeof clean[field]==="string" && !!(clean[field] as string).trim();
       const number=(field:string)=>typeof clean[field]==="number" && Number.isFinite(clean[field]);
-      if(!text("created_at") && !["message_details","concept_prerequisites","session_attendance_events","assessment_origins"].includes(table))throw new Error("Missing record timestamp.");
-      if(!text(table==="message_details" ? "message_id" : table==="concept_prerequisites" ? "concept_id" : table==="assessment_origins" ? "assessment_id" : "id"))throw new Error("Missing record ID.");
+      if(!text("created_at") && !["message_details","concept_prerequisites","session_attendance_events","assessment_origins","assessment_metadata"].includes(table))throw new Error("Missing record timestamp.");
+      if(!text(table==="message_details" ? "message_id" : table==="concept_prerequisites" ? "concept_id" : table==="assessment_origins"||table==="assessment_metadata" ? "assessment_id" : "id"))throw new Error("Missing record ID.");
       if(["students","concepts","conversations"].includes(table) && ![1,2,3,4,5].includes(clean.grade as number))throw new Error("Invalid record grade.");
       if(table==='class_sessions'&&(!['active','paused','completed'].includes(String(clean.status))||![clean.elapsed_seconds,clean.current_block_index].every(v=>typeof v==='number'&&Number.isInteger(v)&&v>=0)||clean.grade!==null&&![1,2,3,4,5].includes(Number(clean.grade))))throw new Error('Invalid class session.');
       if(table==='class_sessions')validateDate(String(clean.date));
@@ -99,6 +101,8 @@ export async function restoreBackupJson(json:string) {
       if(table==="assessments"&&(!number("score")||!number("maximum")||Number(clean.maximum)<=0||Number(clean.score)<0||Number(clean.score)>Number(clean.maximum)))throw new Error("Invalid assessment.");
       if(table==="competencies"&&(!number("mastery")||Number(clean.mastery)<0||Number(clean.mastery)>1))throw new Error("Invalid competency.");
       if(table==="observations"&&(!text("note")||String(clean.note).length>2000))throw new Error("Invalid observation.");
+      if(table==="assessment_metadata"&&(!["diagnostic","classwork","quiz","assignment"].includes(String(clean.kind))||!text("title")))throw new Error("Invalid assessment metadata.");
+      if(table==="notifications"&&(!["learning_change","missed_entry","system"].includes(String(clean.type))||!text("title")||!text("body")||(clean.grade!==null&&!Number.isInteger(Number(clean.grade)))||(clean.grade!==null&&![1,2,3,4,5].includes(Number(clean.grade)))))throw new Error("Invalid notification.");
       if(table==="messages"&&(!text("text")||!["teacher","assistant"].includes(String(clean.role))))throw new Error("Invalid message.");
       if(table==="conversations"&&!text("title"))throw new Error("Invalid conversation.");
       if(table==="message_details") {

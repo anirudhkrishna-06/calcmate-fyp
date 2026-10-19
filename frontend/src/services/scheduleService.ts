@@ -1,4 +1,4 @@
-import { computeMasteryEstimate } from "./learnerEstimator";
+import { computeBktEstimate } from "./learnerEstimator";
 import { ScheduleItem } from "@/types/domain";
 import { Lesson,PlanningPayload, PlanningSelection, SavedPlan, SchedulingEngine } from "@/types/planning";
 import { assertScope, withTransaction, StudentRecord, AttendanceRecord, AssessmentRecord, CompetencyRecord, ConceptRecord, newId } from "./database";
@@ -20,7 +20,7 @@ export async function readPlanningPayload(selection:PlanningSelection):Promise<P
     // Reconstruct every planning estimate from evidence at the selected date.
     competencies=[];
     for(const student of students)for(const concept of new Set(assessments.filter(a=>a.student_id===student.id).map(a=>a.concept_id))){
-      const rows=assessments.filter(a=>a.student_id===student.id&&a.concept_id===concept),r=computeMasteryEstimate(rows);
+      const rows=assessments.filter(a=>a.student_id===student.id&&a.concept_id===concept),r=computeBktEstimate(rows);
       if(r.mastery_estimate!==null)competencies.push({id:`planning-${student.id}-${concept}`,workspace_id:w,student_id:student.id,concept_id:concept,mastery:r.mastery_estimate,created_at:rows[0].created_at,updated_at:rows[0].updated_at});
     }
     const concepts = await tx.getAllAsync<ConceptRecord>("SELECT * FROM concepts WHERE workspace_id=? ORDER BY id",w);

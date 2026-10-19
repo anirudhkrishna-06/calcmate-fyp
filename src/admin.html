@@ -1,11 +1,28 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CalcMate · Teacher approvals</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#F7F4ED;color:#26302c;font:16px/1.6 system-ui,sans-serif}main{max-width:900px;margin:48px auto;padding:24px}h1{margin:0;font-size:32px}p{color:#66706b}section,article{background:white;border:1px solid #e1e8e4;border-radius:8px;padding:24px;margin:20px 0;box-shadow:0 4px 16px #142d230d}header,.actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap}header{justify-content:space-between}button,input,select{font:inherit;border-radius:6px;padding:12px 18px;min-height:48px}button{border:0;background:#16554E;color:white;cursor:pointer}button.secondary{background:#e8eee9;color:#214e34}button:disabled{opacity:.5;cursor:wait}input{border:1px solid #c6d4cb;width:100%;margin:8px 0 16px}label{font-weight:600}h2{font-size:20px;margin:0}#message{min-height:26px;color:#214e34}#message.error{color:#a04444}.badge{background:#dce8d8;color:#214e34;border-radius:24px;padding:6px 14px}.details{white-space:pre-line;overflow-wrap:anywhere}.hidden{display:none}small{color:#66706b}
+*{box-sizing:border-box}body{margin:0;background:#F7F4ED;color:#26302c;font:16px/1.6 system-ui,sans-serif}main{max-width:900px;margin:48px auto;padding:24px}h1{margin:0;font-size:32px}p{color:#66706b}section,article{background:white;border:1px solid #e1e8e4;border-radius:8px;padding:24px;margin:20px 0;box-shadow:0 4px 16px #142d230d}header,.actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap}header{justify-content:space-between}button,input,select{font:inherit;border-radius:6px;padding:12px 18px;min-height:48px}button{border:0;background:#16554E;color:white;cursor:pointer}button.secondary{background:#e8eee9;color:#214e34}button.danger{background:#a04444;color:white}button:disabled{opacity:.5;cursor:wait}input{border:1px solid #c6d4cb;width:100%;margin:8px 0 16px}label{font-weight:600}h2{font-size:20px;margin:0}#message{min-height:26px;color:#214e34}#message.error{color:#a04444}.badge{background:#dce8d8;color:#214e34;border-radius:24px;padding:6px 14px}.details{white-space:pre-line;overflow-wrap:anywhere}.hidden{display:none}small{color:#66706b}.cred-box{background:#f0f7f4;border:1px solid #b3d4c8;border-radius:6px;padding:16px;margin:12px 0;font-family:monospace;font-size:15px;line-height:2}.status-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}.dot-green{background:#16a34a}.dot-amber{background:#d97706}.dot-grey{background:#9ca3af}#demo-msg{min-height:22px;color:#16554E;margin-top:8px}#demo-msg.error{color:#a04444}
 </style></head><body><main>
 <header><div><small>CALCMATE ADMINISTRATION</small><h1>Teacher approvals</h1></div><span id="count" class="badge">Sign in to view requests</span></header>
 <p>New teacher signups appear here automatically. Review their name and school, then approve classroom access.</p>
 <section id="login"><form id="login-form"><label for="code">Administrator password</label><input id="code" type="password" required autocomplete="current-password" placeholder="Enter administrator password"><button id="signin">Log in</button><p><small>Local presentation password: admin123. CALCMATE_ADMIN_PASSWORD overrides this default.</small></p></form></section>
+
+<section id="demo-section" class="hidden">
+  <header style="margin-bottom:12px"><div><h2>🎓 Review 3 Demo Setup</h2><p style="margin:4px 0 0">Seed the mid-year classroom demo: 40 students (Grades 1–5) with attendance, assessment history and knowledge states starting from July.</p></div><span id="demo-status-badge" class="badge">Checking...</span></header>
+  <div id="demo-creds" class="hidden">
+    <div class="cred-box">
+      <div><strong>Email:</strong> demo@vidyaprimary.school</div>
+      <div><strong>Password:</strong> DemoCalc2026</div>
+      <div><strong>Teacher:</strong> Ananya Rao · Vidya Primary School · Grades 1–5</div>
+    </div>
+  </div>
+  <div class="actions" style="margin-top:12px">
+    <button id="btn-seed-demo">Seed &amp; Approve Demo Account</button>
+    <button id="btn-check-demo" class="secondary">Check Status</button>
+  </div>
+  <p id="demo-msg" role="status" aria-live="polite"></p>
+  <p><small>This creates the demo teacher account and approves it immediately. Log in to the CalcMate app with the credentials above — student data seeds automatically on first app launch.</small></p>
+</section>
 <div id="toolbar" class="actions hidden"><label for="status">Requests</label><select id="status"><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="all">All requests</option></select><button id="refresh">Refresh requests</button><button id="approve-selected" disabled>Approve selected (0)</button><button id="select-all" class="secondary">Select visible</button><input id="search" type="search" aria-label="Search teachers" placeholder="Search name, email or school"><button id="logout" class="secondary">Sign out</button><small>Checks for new requests every 10 seconds while open.</small></div>
 <p id="message" role="status" aria-live="polite"></p><div id="requests"></div>
 </main><script>
@@ -16,7 +33,7 @@ async function api(path,method='GET',body){
  const response=await fetch('/admin'+path,{method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,cache:'no-store'});
  const data=await response.json();if(!response.ok){if(response.status===401)signout();throw Error(typeof data.detail==='string'?data.detail:'Unable to complete request.');}return data;
 }
-function signout(){token='';selected.clear();rowsCache=[];$('search').value='';clearInterval(timer);$('code').value='';$('login').classList.remove('hidden');$('toolbar').classList.add('hidden');$('requests').replaceChildren();$('count').textContent='Sign in to view requests';}
+function signout(){token='';selected.clear();rowsCache=[];$('search').value='';clearInterval(timer);$('code').value='';$('login').classList.remove('hidden');$('toolbar').classList.add('hidden');$('demo-section').classList.add('hidden');$('demo-creds').classList.add('hidden');$('requests').replaceChildren();$('count').textContent='Sign in to view requests';}
 function pendingRow(row){return !row.status||row.status==='pending';}
 function filtered(){const q=$('search').value.trim().toLowerCase();return rowsCache.filter(r=>(r.profile.name+' '+r.email+' '+r.profile.schoolName).toLowerCase().includes(q));}
 function updateSelected(){$('approve-selected').textContent='Approve selected ('+selected.size+')';$('approve-selected').disabled=!selected.size||reviewing;}
@@ -33,9 +50,30 @@ function render(rows){
  }
 }
 async function refresh(){if(loading||reviewing||!token)return;loading=true;$('refresh').disabled=true;try{const data=await api('/requests?status='+encodeURIComponent($('status').value||'pending'));render(data.requests);return true;}catch(e){message(e.message,true);return false;}finally{loading=false;$('refresh').disabled=false;}}
-$('login-form').onsubmit=async event=>{event.preventDefault();token=$('code').value;$('signin').disabled=true;message('Checking access...');try{if(await refresh()){$('login').classList.add('hidden');$('toolbar').classList.remove('hidden');$('code').value='';message('Inbox connected.');clearInterval(timer);timer=setInterval(refresh,10000);}}finally{$('signin').disabled=false;}};
+$('login-form').onsubmit=async event=>{event.preventDefault();token=$('code').value;$('signin').disabled=true;message('Checking access...');try{if(await refresh()){$('login').classList.add('hidden');$('toolbar').classList.remove('hidden');$('demo-section').classList.remove('hidden');$('code').value='';message('Inbox connected.');clearInterval(timer);timer=setInterval(refresh,10000);checkDemoStatus();}}finally{$('signin').disabled=false;}};
 $('status').onchange=()=>{selected.clear();updateSelected();return refresh();};
 $('search').oninput=()=>render(rowsCache);$('select-all').onclick=()=>{const visible=filtered().filter(pendingRow);const all=visible.length&&visible.every(r=>selected.has(r.id));visible.forEach(r=>all?selected.delete(r.id):selected.add(r.id));render(rowsCache);};
 $('approve-selected').onclick=async()=>{const ids=[...selected];if(!ids.length||reviewing||!confirm('Approve '+ids.length+' selected teacher(s)?'))return;reviewing=true;updateSelected();try{const result=await api('/approve-selected','POST',{accountIds:ids});selected.clear();reviewing=false;await refresh();message(result.count+' teachers approved. They can now log in.');}catch(e){message(e.message,true);}finally{reviewing=false;updateSelected();}};
 $('refresh').onclick=refresh;$('logout').onclick=()=>{signout();message('Signed out.');};
+
+// ── Demo seed panel ─────────────────────────────────────────────────────────
+async function checkDemoStatus(){
+  if(!token)return;
+  try{
+    const d=await api('/demo-status');
+    const badge=$('demo-status-badge');
+    if(d.demo_approved){badge.innerHTML='<span class="status-dot dot-green"></span>Demo ready';$('demo-creds').classList.remove('hidden');}
+    else if(d.demo_account_exists){badge.innerHTML='<span class="status-dot dot-amber"></span>Account exists – not approved';}
+    else{badge.innerHTML='<span class="status-dot dot-grey"></span>Not seeded';}
+  }catch(e){/* ignore */}
+}
+function demoMsg(text,error=false){$('demo-msg').textContent=text;$('demo-msg').classList.toggle('error',error);}
+$('btn-seed-demo').onclick=async()=>{
+  $('btn-seed-demo').disabled=true;demoMsg('Seeding demo account...');
+  try{
+    const d=await api('/seed-demo','POST');
+    demoMsg(d.message);$('demo-creds').classList.remove('hidden');await checkDemoStatus();
+  }catch(e){demoMsg(e.message,true);}finally{$('btn-seed-demo').disabled=false;}
+};
+$('btn-check-demo').onclick=async()=>{await checkDemoStatus();demoMsg('Status refreshed.');};
 </script></body></html>

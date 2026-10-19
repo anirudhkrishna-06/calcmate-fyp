@@ -1,4 +1,4 @@
-"""Bounded mobile evidence and the shared, observable score-ratio estimator."""
+"""Bounded mobile evidence and the shared, observable BKT estimator."""
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.knowledge_graph import load_kg
 
-ESTIMATOR_VERSION = "score-ratio-v1:1"
+ESTIMATOR_VERSION = "bkt-v1:1"
 snapshot_connection: ContextVar[sqlite3.Connection | None] = ContextVar("classroom_snapshot", default=None)
 
 
@@ -65,7 +65,7 @@ class ClassroomEvidence(EvidenceRow):
     as_of: date
     curriculum_version: str
     local_revision: int = Field(default=0,ge=0)
-    estimator_version: Literal["score-ratio-v1:1"] = ESTIMATOR_VERSION
+    estimator_version: Literal["score-ratio-v1:1", "bkt-v1:1"] = ESTIMATOR_VERSION
     students: list[StudentEvidence] = Field(max_length=500)
     assessments: list[AssessmentEvidence] = Field(max_length=12000)
     attendance: list[AttendanceEvidence] = Field(max_length=4000)
@@ -107,11 +107,21 @@ def assert_workspace(workspace_id: str | None, teacher: dict):
         raise HTTPException(403, "This classroom belongs to another teacher.")
 
 
-def estimate(assessments):
-    ordered = sorted(assessments, key=lambda a: (str(a.date), a.created_at, a.id), reverse=True)
+def estimate(assessments, estimator_version: str = "score-ratio-v1:1"):
+    ordered = sorted(assessments, key=lambda a: (str(a.date), a.created_at, a.id))
     count = len(ordered)
-    mastery = (sum(a.score / a.maximum * .75 ** i for i, a in enumerate(ordered)) /
-               sum(.75 ** i for i in range(count))) if count else None
+    if estimator_version == "bkt-v1:1":
+        mastery = .20
+        for assessment in ordered:
+            observed = max(.01, min(.99, assessment.score / assessment.maximum))
+            mastered_likelihood = mastery * (.10 + .90 * observed)
+            unmastered_likelihood = (1 - mastery) * (.20 + .80 * observed * .35)
+            posterior = mastered_likelihood / (mastered_likelihood + unmastered_likelihood)
+            mastery = posterior + (1 - posterior) * .12
+    else:
+        mastery = (sum(a.score / a.maximum * .75 ** i for i, a in enumerate(reversed(ordered))) /
+                   sum(.75 ** i for i in range(count))) if count else None
+    mastery = mastery if count else None
     return {"mastery_estimate": mastery, "evidence_count": count,
             "last_evidence_at": str(ordered[0].date) if count else None,
             "state_status": "unknown" if mastery is None else "likely_ready" if mastery >= .7 else "insufficient" if mastery >= .6 else "needs_support",
@@ -140,10 +150,10 @@ def evidence_database(evidence: ClassroomEvidence):
     for a in evidence.assessments:
         grouped.setdefault((a.student_id,a.concept_id),[]).append(a)
     for (student,concept), rows in grouped.items():
-        state = estimate(rows)
+        state = estimate(rows, evidence.estimator_version)
         conn.execute("INSERT INTO learner_concept_states VALUES(?,?,?,?,?,?,?,?,?,?,?)", (student, concept, w,
           state["mastery_estimate"], state["evidence_count"], state["last_evidence_at"], state["state_status"],
-          state["evidence_sufficiency"], "score-ratio-v1", "1", evidence.captured_at.isoformat()))
+          state["evidence_sufficiency"], "bkt-v1", "1", evidence.captured_at.isoformat()))
     token = snapshot_connection.set(conn)
     try:
         yield "request-snapshot"

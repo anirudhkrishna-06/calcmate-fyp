@@ -39,7 +39,7 @@ def build_schedule(selection: Selection, evidence: ClassroomEvidence):
     states = {}
     for a in evidence.assessments:
         states.setdefault((a.student_id, a.concept_id), []).append(a)
-    mastery = {key: estimate(rows)["mastery_estimate"] for key, rows in states.items()}
+    mastery = {key: estimate(rows, evidence.estimator_version)["mastery_estimate"] for key, rows in states.items()}
     absent = {a.student_id for a in evidence.attendance if a.date == selection.date and a.status == "absent"}
     needs = []
     for grade in sorted(selection.grades):
