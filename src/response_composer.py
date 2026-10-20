@@ -26,6 +26,8 @@ from src.copilot_contract import (
 # ─── Deterministic Composer ───────────────────────────────────────────────────
 
 _INTENT_PREFIXES = {
+    CopilotIntent.GET_ASSESSMENT_HISTORY:        "Assessment history",
+    CopilotIntent.CLASSROOM_RECORD_QUERY:       "Classroom records",
     CopilotIntent.FIND_STUDENTS_BY_CONCEPT:       "Student group status",
     CopilotIntent.GET_STUDENT_CONCEPT_STATE:      "Student concept state",
     CopilotIntent.GET_STUDENT_PROGRESS:           "Student progress",
@@ -179,7 +181,7 @@ def compose_with_llm(
         return compose_deterministic(operation_result, intent_result, request, rag_answer, rag_chunks)
 
     # For pure RAG intents, the LLM already ran in copilot.py
-    if intent_result.intent in (CopilotIntent.GENERAL_QUESTION,):
+    if intent_result.intent in (CopilotIntent.GENERAL_QUESTION, CopilotIntent.EXPLAIN_CONCEPT) and rag_answer:
         return compose_deterministic(operation_result, intent_result, request, rag_answer, rag_chunks)
 
     facts_parts = []

@@ -51,7 +51,9 @@ export async function requestRag(request:ChatRequest, timeoutMs=90000):Promise<R
   const outgoing={...request};
   if(session?.mode==='real'){
     outgoing.workspace_id=session.workspaceId;
-    outgoing.classroom_evidence=await readClassroomEvidence([...new Set([request.grade,...(session.profile?.grades??[])])]);
+    // Classroom-wide counts and explicitly requested other grades need the
+    // complete workspace, including grades outside the current screen/profile.
+    outgoing.classroom_evidence=await readClassroomEvidence([1,2,3,4,5]);
   }else{delete outgoing.workspace_id;delete outgoing.student_id;delete outgoing.classroom_evidence;}
   const current=await getSession();
   if(current?.workspaceId!==session?.workspaceId||current?.token!==session?.token)throw new Error('Account changed. Reopen Assistant before retrying.');

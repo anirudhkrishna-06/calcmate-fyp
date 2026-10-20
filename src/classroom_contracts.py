@@ -68,7 +68,7 @@ class ClassroomEvidence(EvidenceRow):
     estimator_version: Literal["score-ratio-v1:1", "bkt-v1:1"] = ESTIMATOR_VERSION
     students: list[StudentEvidence] = Field(max_length=500)
     assessments: list[AssessmentEvidence] = Field(max_length=12000)
-    attendance: list[AttendanceEvidence] = Field(max_length=4000)
+    attendance: list[AttendanceEvidence] = Field(max_length=20000)
     deferred_concepts: list[str] = Field(default_factory=list,max_length=100)
 
     @model_validator(mode="after")
@@ -123,7 +123,7 @@ def estimate(assessments, estimator_version: str = "score-ratio-v1:1"):
                    sum(.75 ** i for i in range(count))) if count else None
     mastery = mastery if count else None
     return {"mastery_estimate": mastery, "evidence_count": count,
-            "last_evidence_at": str(ordered[0].date) if count else None,
+            "last_evidence_at": str(ordered[-1].date) if count else None,
             "state_status": "unknown" if mastery is None else "likely_ready" if mastery >= .7 else "insufficient" if mastery >= .6 else "needs_support",
             "evidence_sufficiency": "none" if not count else "sufficient" if count >= 4 else "moderate" if count >= 2 else "limited"}
 
@@ -137,6 +137,9 @@ def evidence_database(evidence: ClassroomEvidence):
       CREATE TABLE students(id TEXT,workspace_id TEXT,name TEXT,grade INTEGER);
       CREATE TABLE concepts(id TEXT,workspace_id TEXT,title TEXT,grade INTEGER);
       CREATE TABLE attendance(student_id TEXT,workspace_id TEXT,date TEXT,status TEXT);
+      CREATE TABLE assessments(id TEXT,workspace_id TEXT,student_id TEXT,concept_id TEXT,
+        date TEXT,score REAL,maximum REAL,created_at TEXT,updated_at TEXT);
+      CREATE TABLE classroom_meta(key TEXT PRIMARY KEY,value TEXT);
       CREATE TABLE learner_concept_states(student_id TEXT,concept_id TEXT,workspace_id TEXT,
         mastery_estimate REAL,evidence_count INTEGER,last_evidence_at TEXT,state_status TEXT,
         evidence_sufficiency TEXT,estimator_name TEXT,estimator_version TEXT,updated_at TEXT);
@@ -146,6 +149,8 @@ def evidence_database(evidence: ClassroomEvidence):
     conn.executemany("INSERT INTO students VALUES(?,?,?,?)", [(s.id, w, s.name, s.grade) for s in evidence.students])
     conn.executemany("INSERT INTO concepts VALUES(?,?,?,?)", [(cid, w, n.get("concept", cid), int(n["grade"])) for cid, n in kg.nodes(data=True)])
     conn.executemany("INSERT INTO attendance VALUES(?,?,?,?)",[(a.student_id,w,str(a.date),a.status) for a in evidence.attendance])
+    conn.executemany("INSERT INTO assessments VALUES(?,?,?,?,?,?,?,?,?)",[(a.id,w,a.student_id,a.concept_id,str(a.date),a.score,a.maximum,a.created_at,a.updated_at) for a in evidence.assessments])
+    conn.executemany("INSERT INTO classroom_meta VALUES(?,?)",[("as_of",str(evidence.as_of)),("estimator_version",evidence.estimator_version)])
     grouped={}
     for a in evidence.assessments:
         grouped.setdefault((a.student_id,a.concept_id),[]).append(a)
@@ -153,7 +158,7 @@ def evidence_database(evidence: ClassroomEvidence):
         state = estimate(rows, evidence.estimator_version)
         conn.execute("INSERT INTO learner_concept_states VALUES(?,?,?,?,?,?,?,?,?,?,?)", (student, concept, w,
           state["mastery_estimate"], state["evidence_count"], state["last_evidence_at"], state["state_status"],
-          state["evidence_sufficiency"], "bkt-v1", "1", evidence.captured_at.isoformat()))
+          state["evidence_sufficiency"], *evidence.estimator_version.split(":"), evidence.captured_at.isoformat()))
     token = snapshot_connection.set(conn)
     try:
         yield "request-snapshot"

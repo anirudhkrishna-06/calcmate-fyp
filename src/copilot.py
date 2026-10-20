@@ -276,6 +276,8 @@ def answer_question(
     model: str = DEFAULT_MODEL,
     stream: bool = False,
     use_llm: bool = True,
+    *,
+    concept_ids: list[str] | None = None,
 ) -> tuple[str, list[RetrievedChunk]]:
     """
     Full pipeline: retrieve -> threshold check -> grounded prompt -> LLM.
@@ -290,7 +292,7 @@ def answer_question(
     LLM call latency.
     """
     t0 = time.perf_counter()
-    chunks = retriever.retrieve(question, grade=grade, subject=subject, k=k)
+    chunks = retriever.retrieve(question, grade=grade, subject=subject, k=k, **({"concept_ids": concept_ids} if concept_ids is not None else {}))
 
 
 

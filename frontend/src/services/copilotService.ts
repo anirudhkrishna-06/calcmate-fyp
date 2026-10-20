@@ -50,6 +50,8 @@ export function intentLabel(intent: string | undefined | null): string {
     find_students_by_concept:       "Student group status",
     get_student_concept_state:      "Student concept state",
     get_student_progress:           "Student progress",
+    get_assessment_history:        "Assessment history",
+    classroom_record_query:        "Classroom records",
     explain_learning_difficulty:    "Learning difficulty",
     explain_prerequisites:          "Prerequisites",
     explain_concept:                "Concept explanation",

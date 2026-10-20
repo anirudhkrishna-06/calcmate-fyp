@@ -173,14 +173,14 @@ class Retriever:
         subject: Optional[str] = None,
         k: int = 3,
         log_call: bool = True,
+        *,
+        concept_ids: Optional[list[str]] = None,
     ) -> list[RetrievedChunk]:
         """
         Retrieve the top-k chunks for `query`.
 
-        If grade AND subject are both provided, retrieval is restricted to
-        chunks whose metadata matches that (grade, subject) bucket using
-        FAISS IDSelectorArray. If the bucket is empty, falls back to global
-        search (flagged via RetrievedChunk.used_fallback=True).
+        Metadata filters are intersected before similarity search. A concept
+        filter never falls back to unrelated material when no chunk matches.
 
         Args:
             query: natural-language question.
@@ -201,8 +201,11 @@ class Retriever:
         used_fallback = False
         filter_size: Optional[int] = None
 
-        if grade is not None and subject is not None:
-            matching_ids = self._buckets.get((grade, subject), [])
+        if grade is not None or subject is not None or concept_ids is not None:
+            matching_ids = self._buckets.get((grade, subject), []) if grade is not None and subject is not None else [idx for idx, meta in self.meta_by_id.items() if (grade is None or meta["grade"] == grade) and (subject is None or meta["subject"] == subject)]
+            if concept_ids is not None:
+                wanted = set(concept_ids)
+                matching_ids = [idx for idx in matching_ids if wanted.intersection(self.meta_by_id[idx].get("concept_ids", []))]
             filter_size = len(matching_ids)
 
             if matching_ids:
@@ -210,7 +213,7 @@ class Retriever:
                 params = faiss.SearchParameters(sel=selector)
                 effective_k = min(k, len(matching_ids))
                 scores, ids = self.index.search(q_vec, effective_k, params=params)
-            elif FALLBACK_ON_EMPTY_BUCKET:
+            elif FALLBACK_ON_EMPTY_BUCKET and concept_ids is None:
                 used_fallback = True
                 log.debug(
                     f"[retrieve] empty bucket for (grade={grade}, subject={subject!r}); "

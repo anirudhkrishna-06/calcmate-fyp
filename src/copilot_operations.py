@@ -41,9 +41,16 @@ def _rag_limitation(grade: int) -> Optional[str]:
 def _retrieve_for_concept(concept_phrase: str, grade: int, k: int = 3) -> list[dict]:
     """Call the retriever; return list of chunk dicts (safe even if unavailable)."""
     try:
-        from src.copilot import get_default_retriever
+        from src.copilot import get_default_retriever, MIN_SCORE_THRESHOLD
+        from src.classroom_queries import concept_ids
+        ids = concept_ids(concept_phrase, grade)
+        kg = load_kg()
+        query = "; ".join(kg.nodes[cid]["concept"] for cid in ids) if ids else concept_phrase
+        if len(ids) == 1:
+            grade = int(kg.nodes[ids[0]]["grade"])
         retriever = get_default_retriever()
-        chunks = retriever.retrieve(concept_phrase, grade=min(grade, 5), subject="Math", k=k)
+        chunks = retriever.retrieve(query, grade=min(grade, 5), subject="Math", k=k, concept_ids=ids or None)
+        chunks = [chunk for chunk in chunks if chunk.score >= MIN_SCORE_THRESHOLD]
         print(
             "[CALCMATE_TRACE] operation_retrieval "
             f"phrase={concept_phrase[:80]!r} grade={grade!r} chunks={len(chunks)!r}",
@@ -53,7 +60,7 @@ def _retrieve_for_concept(concept_phrase: str, grade: int, k: int = 3) -> list[d
             {
                 "chunk_id": c.chunk_id, "text": c.text[:400], "grade": c.grade,
                 "subject": c.subject, "source_pdf": c.source_pdf,
-                "chunk_index": c.chunk_index, "score": round(c.score, 3),
+                "chunk_index": c.chunk_index, "score": round(c.score, 3), "concept_ids": getattr(c,"concept_ids",[]),
                 "used_fallback": c.used_fallback,"source_url":getattr(c,"source_url",None),"source_pages":getattr(c,"source_pages",None),"resource_kind":getattr(c,"resource_kind","textbook_passage"),
             }
             for c in chunks
@@ -198,8 +205,8 @@ def op_get_student_concept_state(intent: IntentResult, request: CopilotRequest) 
         prereq_ids = list(kg.predecessors(concept_id)) if concept_id in kg.nodes else []
         graph_finding = None
         if prereq_ids:
-            k_state = {pid: 0.0 for pid in prereq_ids}
-            readiness = prerequisite_readiness(kg, k_state, concept_id)
+            analysis = li.get_student_prerequisite_analysis(workspace_id, student_id, concept_id, db_path)
+            readiness = analysis["kg_prerequisite_readiness"]
             graph_finding = (
                 f"Prerequisite readiness score: {readiness:.2f} "
                 f"(prerequisites: {', '.join(prereq_ids)})."
@@ -498,6 +505,9 @@ def op_classroom_learning_summary(intent: IntentResult, request: CopilotRequest)
             today = datetime.date.today().isoformat()
             with li._connect(db_path) as conn:
                 conn.row_factory = sqlite3.Row
+                from src.classroom_contracts import snapshot_connection
+                if snapshot_connection.get() is not None:
+                    today = conn.execute("SELECT value FROM classroom_meta WHERE key='as_of'").fetchone()[0]
                 attendance = [dict(row) for row in conn.execute(
                     """SELECT s.name AS student_name, a.status FROM attendance a
                        JOIN students s ON s.id=a.student_id AND s.workspace_id=a.workspace_id
@@ -636,44 +646,92 @@ def op_group_prerequisite_readiness(intent: IntentResult, request: CopilotReques
         )
 
 
+def _practice_steps(title):
+    """Inspectable teacher-practice templates; retrieved sources stay explicit."""
+    lower = title.lower()
+    if "equivalent" in lower and "fraction" in lower:
+        return ["Take two equal-length paper strips. Fold the first into two equal parts and shade one part (1/2).",
+                "Fold the second into four equal parts and shade two parts (2/4). Align their ends and compare the shaded lengths.",
+                "Explain why 1/2 = 2/4, then repeat with 1/3 and 2/6. Ask each learner to draw and explain one equivalent pair."]
+    if "numerator" in lower or "denominator" in lower or "fraction representation" in lower:
+        return ["Divide a rectangle into four equal parts and shade three.",
+                "Write 3/4: explain that 4 counts all equal parts and 3 counts shaded parts.",
+                "Change the number of shaded parts and ask learners to draw, name and explain the new fraction."]
+    if "division" in lower:
+        return (["Share 14 counters equally among three groups: place four in each group and identify the two counters left over.",
+                 "Record 14 = 3 x 4 + 2. Explain why the remainder must be smaller than three.",
+                 "Try 17 counters in four groups and explain the quotient and remainder."] if "remainder" in lower else
+                ["Share 12 counters equally into three groups and count four in each group.",
+                 "Record 12 / 3 = 4 and check it with 3 x 4 = 12.",
+                 "Ask learners to share 20 counters among five groups and explain their grouping."] if "long" not in lower else
+                ["Work through 144 / 12 using place value and the divide, multiply, subtract and bring-down steps.",
+                 "Check that 12 x 12 = 144; have partners explain each step.",
+                 "Try 168 / 12 independently and check the quotient by multiplication."])
+    if "shape" in lower:
+        return ["Trace familiar objects to draw a triangle, square and rectangle.",
+                "Count and mark their straight sides and corners. Compare them with a circle, which has no corners.",
+                "Ask a partner to identify a shape from its sides and corners and explain the choice."]
+    if "length" in lower:
+        return ["Place two classroom objects side by side with one end aligned.",
+                "Identify which extends farther; describe it as longer and the other as shorter.",
+                "Order three pencils by length and ask a partner to check the aligned ends and explain the order."]
+    if "count" in lower:
+        return ["Arrange a small set of counters and count each object exactly once.",
+                "Match the set to a written numeral, then rearrange it and count again.",
+                "Ask learners to explain why rearranging the same objects does not change their number."]
+    return [f"Model one worked example for {title.lower()} using objects or a diagram.",
+            "Have pairs explain each step and check a similar example against the model.",
+            "Collect one individual exit answer and explanation; record its score before updating learner state."]
+
+
 def op_recommend_curriculum_activity(intent: IntentResult, request: CopilotRequest) -> OperationResult:
-    """Retrieve NCERT content and suggest a teaching activity for a concept."""
+    """Select the actual concept, use recorded readiness, and cite matching sources."""
+    from src.classroom_queries import concept_ids, roster
     params = intent.parameters
-    concept_id: Optional[str] = params.get("concept_id")
-    concept_phrase: str = params.get("concept_phrase", concept_id or request.message[:60])
-    grade: int = int(params.get("grade", request.grade))
-    limitations: list[str] = []
-    lim = _rag_limitation(grade)
-    if lim:
-        limitations.append(lim)
-
-    chunks = _retrieve_for_concept(concept_phrase, grade)
-    ncert = None
-    if chunks:
-        top = chunks[0]
-        ncert = {"source_pdf": top["source_pdf"], "grade": top["grade"],
-                 "text_snippet": top["text"][:300]}
-        evidence = f"Retrieved {len(chunks)} NCERT passage(s) for '{concept_phrase}' (Grade {grade})."
-    else:
-        evidence = (
-            f"No NCERT passages retrieved for '{concept_phrase}' (Grade {grade}). "
-            "This topic may not be covered in the current corpus, or the grade is outside the indexed range."
-        )
-        limitations.append("No curriculum content found for this concept at this grade.")
-
-    return OperationResult(
-        operation="recommend_curriculum_activity",
-        status=OperationStatus.OK if chunks else OperationStatus.PARTIAL,
-        structured_data={"concept_id": concept_id, "concept_phrase": concept_phrase,
-                         "grade": grade, "chunks": chunks[:3]},
-        evidence_summary=evidence,
-        ncert_resource=ncert,
-        limitations=limitations,
-        recommended_next_step=(
-            f"Use the retrieved passages to design a hands-on activity for '{concept_phrase}'."
-            if chunks else None
-        ),
-    )
+    grade = int(params.get("grade", request.grade))
+    kg = load_kg()
+    target = params.get("concept_id")
+    if target not in kg:
+        ids = concept_ids(params.get("concept_phrase", ""), grade)
+        target = ids[0] if len(ids) == 1 else None
+    if not target:
+        return OperationResult(operation="recommend_curriculum_activity", status=OperationStatus.PARTIAL,
+                               evidence_summary="Please specify the activity's concept or topic and grade.")
+    title = kg.nodes[target]["concept"]
+    focus = target
+    analysis = None
+    graph = None
+    student_id = params.get("student_id") or request.student_id
+    student = next((s for s in roster(request.workspace_id) if s["id"] == student_id), None)
+    prefix = ""
+    if student_id and student and _find_db():
+        analysis = li.get_student_prerequisite_analysis(request.workspace_id, student_id, target, _find_db())
+        blocked = [p for p in analysis["prerequisites"] if p["is_blocking"]]
+        if blocked:
+            focus = blocked[0]["concept_id"]
+            reason = "prerequisite evidence is missing; start with a diagnostic check" if blocked[0]["state_status"] == "unknown" else "recorded prerequisite evidence indicates support is needed"
+            prefix = f"For {student['name']}, before {title} ({target}), practise {kg.nodes[focus]['concept']} ({focus}): {reason}. "
+        else:
+            prefix = f"For {student['name']}, recorded prerequisite evidence supports practising {title} ({target}). "
+        graph = f"Observed prerequisite readiness: {analysis['kg_prerequisite_readiness']:.2f}. " + analysis["recommendation"]
+    grade = int(kg.nodes[focus]["grade"])
+    chunks = _retrieve_for_concept(focus, grade)
+    steps = _practice_steps(kg.nodes[focus]["concept"])
+    limitations = [value for value in [_rag_limitation(grade)] if value]
+    if not chunks:
+        limitations.append("No concept-specific NCERT passage is indexed for this activity. These are teacher-practice template instructions, not a quoted NCERT activity.")
+    evidence = prefix + f"Activity: {kg.nodes[focus]['concept']} ({focus}). " + " ".join(f"{i+1}. {step}" for i, step in enumerate(steps))
+    if focus != target:
+        evidence += f" Then revisit {title} ({target}) after a scored prerequisite check."
+    source = ({"source_pdf": chunks[0]["source_pdf"], "grade": chunks[0]["grade"],
+               "text_snippet": chunks[0]["text"][:300]} if chunks else None)
+    return OperationResult(operation="recommend_curriculum_activity", status=OperationStatus.OK if chunks else OperationStatus.PARTIAL,
+                           evidence_summary=evidence, graph_finding=graph, ncert_resource=source,
+                           limitations=limitations, recommended_next_step="Record an individual exit assessment; completing an activity alone does not establish mastery.",
+                           structured_data={"concept_id": target, "activity_concept_id": focus,
+                                            "concept_phrase": title, "grade": grade, "chunks": chunks,
+                                            "prerequisite_analysis": analysis, "deterministic_activity": True,
+                                            "activity": {"concept_id": focus, "instructions": steps, "source_references": [c["source_pdf"] for c in chunks]}})
 
 
 def op_retrieve_ncert_resource(intent: IntentResult, request: CopilotRequest) -> OperationResult:
@@ -831,6 +889,9 @@ _DISPATCH = {
 
 def dispatch(intent_result: IntentResult, request: CopilotRequest) -> OperationResult:
     """Route an IntentResult to the correct operation function."""
+    if intent_result.parameters.get("record_query"):
+        from src.classroom_queries import execute_record_query
+        return execute_record_query(intent_result, request)
     fn = _DISPATCH.get(intent_result.intent)
     if fn is None:
         print(f"[CALCMATE_TRACE] dispatch_missing intent={intent_result.intent.value!r}", flush=True)

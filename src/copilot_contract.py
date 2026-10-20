@@ -23,6 +23,8 @@ class CopilotIntent(str, Enum):
     FIND_STUDENTS_BY_CONCEPT       = "find_students_by_concept"
     GET_STUDENT_CONCEPT_STATE      = "get_student_concept_state"
     GET_STUDENT_PROGRESS           = "get_student_progress"
+    GET_ASSESSMENT_HISTORY         = "get_assessment_history"
+    CLASSROOM_RECORD_QUERY        = "classroom_record_query"
     EXPLAIN_LEARNING_DIFFICULTY    = "explain_learning_difficulty"
     # Curriculum graph queries
     EXPLAIN_PREREQUISITES          = "explain_prerequisites"

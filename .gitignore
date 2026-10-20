@@ -12,3 +12,4 @@ __pycache__/
 *.py[cod]
 data/copilot_log.jsonl
 data/retrieval_log.jsonl
+docs/report

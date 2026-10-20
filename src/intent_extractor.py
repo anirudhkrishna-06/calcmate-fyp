@@ -137,6 +137,7 @@ _PREREQUISITE_PATTERNS = [
 ]
 
 _DIFFICULTY_PATTERNS = [
+    r"\bwhy\s+(?:is|does)\s+\w+(?:\s+\w+){0,3}\s+(?:struggling|having trouble)\b",
     r"\bwhy\s+(is|are|do|does)\s+\w+\s+(struggling|having\s+trouble|finding\s+(it\s+)?hard)\b",
     r"\bexplain\s+(the\s+)?(difficulty|challenges?|struggle)\b",
     r"\bwhy\s+(is|are)\s+(this|it|that)\s+(hard|difficult|challenging)\b",
@@ -218,7 +219,8 @@ def _extract_grade(text: str, default: int) -> int:
         raw = m.group(2) or m.group(3)
         g = int(raw)
         return g if 1 <= g <= 5 else default
-    return default
+    word = re.search(r"\b(?:grade|class|standard)\s+(one|two|three|four|five)\b", text, re.I)
+    return {"one":1,"two":2,"three":3,"four":4,"five":5}[word[1].lower()] if word else default
 
 
 # ─── Concept phrase extraction ────────────────────────────────────────────────
@@ -254,6 +256,11 @@ def _extract_concept_phrase(text: str) -> Optional[str]:
     m_id = re.search(r"\b(m\d{3})\b", text, re.IGNORECASE)
     if m_id:
         return m_id.group(1).upper()
+    specific = re.search(r"\b(long division|division with remainder|division as equal sharing|equivalent fractions?|fraction representation|addition of fractions(?: with (?:un)?like denominators)?|skip counting)\b", text, re.I)
+    if specific:
+        return specific[0]
+    if re.search(r"\blong\s+and\s+short\b", text, re.I):
+        return "comparison of lengths"
     m = _CONCEPT_RE.search(text)
     return m.group(0).strip() if m else None
 
@@ -273,7 +280,7 @@ def _extract_student_name(text: str) -> Optional[str]:
     for pat in patterns:
         m = re.search(pat, text)
         if m:
-            name = m.group(2) if len(m.groups()) >= 2 else m.group(1)
+            name = m.group(2) if pat == patterns[0] else m.group(1)
             if name.lower() not in {
                 "grade", "class", "group", "the", "all", "this",
                 "they", "their", "she", "her", "he", "his",
@@ -297,8 +304,7 @@ def _classify_deterministic(text: str, request: CopilotRequest) -> IntentResult:
     grade = _extract_grade(text, request.grade)
     concept_phrase = _extract_concept_phrase(text)
     concept_id = (
-        request.concept_id
-        or (resolve_concept_id(concept_phrase, grade) if concept_phrase else None)
+        (resolve_concept_id(concept_phrase, grade) if concept_phrase else request.concept_id)
     )
     student_name = _extract_student_name(text)
 
@@ -311,6 +317,11 @@ def _classify_deterministic(text: str, request: CopilotRequest) -> IntentResult:
         params["student_name"] = student_name
     if request.student_id:
         params["student_id"] = request.student_id
+
+    from src.classroom_queries import classify_record_query
+    record_query = classify_record_query(text, request, params)
+    if record_query is not None:
+        return record_query
 
     missing: list[str] = []
 
@@ -506,6 +517,9 @@ def extract_intent(request: CopilotRequest) -> IntentResult:
     3. Validate LLM result; fall back to deterministic on any error.
     """
     deterministic = _classify_deterministic(request.message, request)
+    if deterministic.intent == CopilotIntent.GENERAL_QUESTION and (request.student_id or re.search(r"\b(?:students?|classroom|attendance|assessment|scores?|marks?)\b", request.message, re.I)):
+        return IntentResult(intent=CopilotIntent.CLASSROOM_RECORD_QUERY,
+                            parameters={"record_query":"unsupported","grade":request.grade})
     print(
         "[CALCMATE_TRACE] deterministic_intent "
         f"intent={deterministic.intent.value!r} "

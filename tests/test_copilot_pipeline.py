@@ -350,7 +350,11 @@ class CopilotPipelineTests(unittest.TestCase):
             self.assertEqual(resp.status_code, 200)
             self.assertEqual(resp.json()["intent"], "recommend_curriculum_activity")
             self.assertEqual(resp.json()["chunks"][0]["source_pdf"], "math4.pdf")
-            rag_runtime.assert_called_once()
+            self.assertIn("angles", resp.json()["answer"].lower())
+            self.assertTrue(resp.json()["structured_data"]["deterministic_activity"])
+            # The concept-filtered operation supplies these sources directly;
+            # a second free-text retrieval can replace them with the wrong topic.
+            rag_runtime.assert_not_called()
 
     # ── 3. Response Composer Tests ───────────────────────────────────────────
 

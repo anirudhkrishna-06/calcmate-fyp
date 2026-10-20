@@ -125,6 +125,29 @@ class ClassroomIntegrationTests(unittest.TestCase):
             self.assertTrue(all(c.resource_kind in {'source_summary','textbook_excerpt'} and c.source_url.startswith('https://ncert.nic.in/') for c in chunks))
         self.assertTrue(all(coverage()[str(g)]['chunks']>0 for g in range(1,6)))
 
+    @unittest.skipUnless(os.getenv('CALCMATE_TEST_REAL_RAG')=='1','Enable actual cached-model retrieval')
+    def test_curriculum_retrieval_is_restricted_to_requested_concept(self):
+        from src.copilot_operations import _retrieve_for_concept
+        from src.retrieve import get_default_retriever
+        for cid, grade in [('M408', 4), ('M403', 4)]:
+            with self.subTest(concept=cid):
+                chunks = _retrieve_for_concept(cid, grade)
+                self.assertTrue(chunks)
+                self.assertTrue(all(c['grade'] == grade and cid in c['concept_ids'] for c in chunks))
+        # The Grade 1 length tag currently points at a weak shape summary;
+        # do not display it as supporting evidence for length comparisons.
+        self.assertEqual(_retrieve_for_concept('M107', 1), [])
+        # An empty concept filter cannot silently return unrelated material.
+        self.assertEqual(get_default_retriever().retrieve('division', grade=4, subject='Math', concept_ids=['M999'], log_call=False), [])
+        for kwargs in ({'grade': 4}, {'subject': 'Math'}, {}):
+            chunks = get_default_retriever().retrieve('equivalent fractions', concept_ids=['M408'], log_call=False, **kwargs)
+            self.assertTrue(chunks)
+            self.assertTrue(all('M408' in c.concept_ids for c in chunks))
+        response = self.client.post('/chat', headers=self.headers, json=dict(question='Explain M408.', grade=4, use_llm=False, workspace_id='teacher-a', classroom_evidence=self.evidence))
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(response.json()['chunks'])
+        self.assertTrue(all(c['grade'] == 4 and c['source_pdf'] == 'demm105.pdf' for c in response.json()['chunks']))
+
     def test_planner_authorization_and_determinism(self):
         payload = {"selection": {"date": "2026-10-18", "grades": [2], "availableMinutes": 45, "priority": "learning-needs"}, "classroom_evidence": self.evidence}
         self.assertEqual(self.client.post("/planning/general", json=payload).status_code, 401)

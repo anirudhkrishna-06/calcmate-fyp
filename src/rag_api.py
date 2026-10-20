@@ -178,11 +178,6 @@ def _run_copilot_pipeline(request: ChatRequest) -> ChatResponse:
     from src.copilot_operations import dispatch
     from src.response_composer import compose_deterministic, compose_with_llm
 
-    if request.classroom_evidence and not request.student_id:
-        import re
-        candidates=[s.id for s in request.classroom_evidence.students if re.search(r'\b'+re.escape(s.name)+r'\b',request.question,re.I)]
-        if len(candidates)==1:
-            request.student_id=candidates[0]
     copilot_req = Req(
         message=request.question,
         grade=request.grade,
@@ -194,6 +189,8 @@ def _run_copilot_pipeline(request: ChatRequest) -> ChatResponse:
         concept_id=request.concept_id,
         screen_context=request.screen_context,
     )
+    from src.classroom_queries import bind_student_context
+    bind_student_context(copilot_req)
 
     _trace(
         "copilot_request",
@@ -223,19 +220,30 @@ def _run_copilot_pipeline(request: ChatRequest) -> ChatResponse:
     # For retrieval-heavy intents, also run RAG for enrichment
     rag_answer: Optional[str] = None
     rag_chunks: list = []
-    rag_intents = {CopilotIntent.GENERAL_QUESTION, CopilotIntent.EXPLAIN_CONCEPT,
-                   CopilotIntent.RECOMMEND_CURRICULUM_ACTIVITY, CopilotIntent.RETRIEVE_NCERT_RESOURCE,
-                   CopilotIntent.EXPLAIN_PREREQUISITES, CopilotIntent.EXPLAIN_LEARNING_DIFFICULTY}
+    rag_intents = {CopilotIntent.GENERAL_QUESTION, CopilotIntent.EXPLAIN_CONCEPT}
 
     if intent_result.intent in rag_intents:
         _trace("rag_enrichment_start", intent=intent_result.intent.value)
         try:
             copilot_mod, retriever = _get_runtime()
             model = os.getenv("CALCMATE_RAG_MODEL", copilot_mod.DEFAULT_MODEL)
+            from src.classroom_queries import concept_ids
+            from src.knowledge_graph import load_kg
+            params = intent_result.parameters
+            query_grade = int(params.get("grade", request.grade))
+            ids = concept_ids(params.get("concept_phrase", ""), query_grade)
+            query = request.question
+            if ids:
+                import re
+                kg = load_kg()
+                for cid in ids:
+                    query = re.sub(r"\b" + cid + r"\b", kg.nodes[cid]["concept"] + f" ({cid})", query, flags=re.I)
+                if len(ids) == 1:
+                    query_grade = int(kg.nodes[ids[0]]["grade"])
             rag_answer, raw_chunks = copilot_mod.answer_question(
-                retriever, request.question, request.grade,
+                retriever, query, query_grade,
                 subject=request.subject, k=request.k, model=model,
-                stream=False, use_llm=request.use_llm,
+                stream=False, use_llm=request.use_llm, concept_ids=ids or None,
             )
             if rag_answer.startswith("[generation failed:"):
                 if raw_chunks and os.getenv("CALCMATE_RAG_ALLOW_RETRIEVAL_FALLBACK", "true").lower() in {"true", "1", "yes", "on"}:
@@ -262,12 +270,12 @@ def _run_copilot_pipeline(request: ChatRequest) -> ChatResponse:
 
     if not rag_chunks and op_result.structured_data and "chunks" in op_result.structured_data:
         rag_chunks = op_result.structured_data["chunks"]
-    if not rag_answer and rag_chunks:
+    if not rag_answer and rag_chunks and intent_result.intent in rag_intents:
         from types import SimpleNamespace
         dummy_chunks = [SimpleNamespace(**c) for c in rag_chunks]
         rag_answer = source_excerpt_answer(dummy_chunks)
 
-    if request.use_llm and intent_result.intent in {CopilotIntent.GENERAL_QUESTION,CopilotIntent.EXPLAIN_CONCEPT,CopilotIntent.RECOMMEND_CURRICULUM_ACTIVITY,CopilotIntent.RETRIEVE_NCERT_RESOURCE}:
+    if request.use_llm and intent_result.intent in {CopilotIntent.GENERAL_QUESTION,CopilotIntent.EXPLAIN_CONCEPT,CopilotIntent.RECOMMEND_CURRICULUM_ACTIVITY,CopilotIntent.RETRIEVE_NCERT_RESOURCE} and not (op_result.structured_data or {}).get("deterministic_activity"):
         copilot_response = compose_with_llm(
             op_result, intent_result, copilot_req,
             rag_answer=rag_answer, rag_chunks=rag_chunks,
@@ -340,6 +348,10 @@ def chat(request: ChatRequest, http_request: Request, authorization: str | None 
             raise HTTPException(422, "Refresh classroom evidence before asking about students.")
         assert_workspace(request.classroom_evidence.workspace_id, teacher)
         request.workspace_id = teacher["workspace_id"]
+    if not (request.workspace_id or request.student_id or request.classroom_evidence):
+        import re
+        if re.search(r"\b(?:students?|classroom|attendance|mastery|assessment|who needs? (?:support|help)|who (?:is|are) (?:absent|struggling))\b", request.question, re.I) and not re.search(r"\b(?:suggest|activity|teach|explain|textbook|ncert)\b", request.question, re.I):
+            return ChatResponse(answer="Classroom records are not available for this question. Sign in to your approved teacher account and refresh classroom evidence. Explore Demo does not send student records to the Assistant.", chunks=[], mode="copilot", intent="classroom_record_query")
     _trace("chat_received", subject=request.subject, grade=request.grade, use_llm=request.use_llm)
     # Stage 3: Route structured copilot requests through the intent pipeline.
     if _is_copilot_request(request):
