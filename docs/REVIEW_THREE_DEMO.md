@@ -11,8 +11,6 @@
 
 ## 1. System Setup and Startup Commands
 
-Ensure you are in the project root: `d:\SSN College of Engineering\4th Year - 7th Sem\FYP\calcmate-project`.
-
 ### Terminal 1: Python FastAPI Copilot & RAG Server
 ```powershell
 .\venv\Scripts\Activate.ps1
