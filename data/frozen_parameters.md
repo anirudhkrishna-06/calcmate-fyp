@@ -342,3 +342,12 @@ Each of the six has a corresponding future-work paragraph in the paper.
 - Yudelson, M. V., Koedinger, K. R., & Gordon, G. J. (2013). *Individualized
   Bayesian Knowledge Tracing.* (Source for the two-step update equations
   referenced in `src/sim/bkt.py`.)
+
+
+## Production integration revision: 18 October 2026
+
+The app uses `score-ratio-v1:1`: assessment ratios sorted by assessment date, creation timestamp and ID, newest first; weight at index i is 0.75^i. The estimate is the weighted ratio sum divided by the weight sum. No evidence gives null; a recorded zero remains zero. Support is below 0.60, Developing is 0.60 to below 0.70, and Likely ready starts at 0.70. Evidence sufficiency is reported separately.
+
+Online planning uses `observed-allocation-v1`, with observable pressure sum(max(0, 0.80 - estimate)); missing evidence contributes 0.30 as diagnostic planning pressure, not a mastery value. Grade weight starts at 1, adds support/missing pressure weighted by balanced (1) or learning-needs (3), a downstream bonus capped at 0.60, a prerequisite-gap bonus of 0.60, and 0.25 for postponed instruction. Attendance affects participation, never mastery. Saved plans carry evidence, estimator, curriculum and policy provenance.
+
+These implementation parameters require calibration and classroom evaluation. Historical simulation results refer to their recorded experimental policy; they are not automatically evidence for the complete new production policy. The local offline heuristic is labeled separately.

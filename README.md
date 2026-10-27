@@ -1,11 +1,17 @@
 # Calcmate — KG + RAG Starter (Week 1)
 
+For the current teacher app, teammate setup and professor walkthrough, start with [Team handover](docs/team-handover.md). On Windows, after first-time dependency setup, run `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-presentation.ps1`.
+
+Assistant questions about latest assessments, topic support, attendance, history and comparisons: [supported questions and evidence rules](docs/classroom-assistant-queries.md), with a [reviewed 84-prompt validation report](docs/report/evaluation/state-awareness-2026-10-20-refined/summary.md).
+
+Current integration changes and validation: [App improvement report](docs/app-improvement-validation.md). The app supports Grades 1-5, uses authenticated classroom evidence for Assistant/planning, and supports complete version 3 backups. The [implementation checklist](APP_IMPROVEMENT_PLAN.md) records remaining device verification and corpus limits.
+
 ## What's here
 
 ```
 calcmate/
 ├── data/
-│   └── concepts.csv          43 Math concepts, Grades 3-5, with prerequisite edges
+│   └── concepts.csv          84 Math concepts, Grades 1-5; prerequisite edges in a separate CSV
 ├── src/
 │   ├── knowledge_graph.py    KG loader + PR(g,c), DI(c), feasibility - TESTED, WORKS
 │   └── rag_compare.py        Generic vs curriculum-aware retrieval comparison

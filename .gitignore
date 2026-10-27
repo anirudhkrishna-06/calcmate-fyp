@@ -1,2 +1,16 @@
 venv/
 pdfs/
+data/auth.sqlite3*
+frontend/android/
+frontend/ios/
+data/presentation-api*.log
+frontend/.env
+frontend/.env.local
+pdfs.zip
+# Python cache files
+__pycache__/
+*.py[cod]
+data/copilot_log.jsonl
+data/retrieval_log.jsonl
+docs/report
+MODEL/

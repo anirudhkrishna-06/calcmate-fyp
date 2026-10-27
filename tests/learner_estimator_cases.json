@@ -1,0 +1,7 @@
+[
+  {"name":"no evidence","assessments":[],"expected":null,"status":"unknown"},
+  {"name":"assessed zero","assessments":[{"id":"a","date":"2026-10-17","created_at":"2026-10-17T08:00:00Z","updated_at":"2026-10-17T08:00:00Z","score":0,"maximum":10}],"expected":0,"status":"needs_support"},
+  {"name":"history rather than latest mark","assessments":[{"id":"a","date":"2026-10-17","created_at":"2026-10-17T08:00:00Z","updated_at":"2026-10-17T08:00:00Z","score":1,"maximum":10},{"id":"b","date":"2026-10-18","created_at":"2026-10-18T08:00:00Z","updated_at":"2026-10-18T08:00:00Z","score":9,"maximum":10}],"expected":0.5571428571428572,"status":"needs_support"},
+  {"name":"support boundary","assessments":[{"id":"a","date":"2026-10-17","created_at":"2026-10-17T08:00:00Z","updated_at":"2026-10-17T08:00:00Z","score":6,"maximum":10}],"expected":0.6,"status":"insufficient"},
+  {"name":"ready boundary","assessments":[{"id":"a","date":"2026-10-17","created_at":"2026-10-17T08:00:00Z","updated_at":"2026-10-17T08:00:00Z","score":7,"maximum":10}],"expected":0.7,"status":"likely_ready"}
+]

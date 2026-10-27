@@ -1,0 +1,179 @@
+====================================================================================================
+                                  CALCMATE REPORT FIGURE GENERATOR                                  
+====================================================================================================
+
+[ Run environment ]---------------------------------------------------------------------------------
+  Timestamp                         : 2026-10-20 10:34:19
+  Python                            : 3.12.10
+  Platform                          : Windows-11-10.0.26300-SP0
+  matplotlib                        : 3.11.2
+  networkx                          : 3.6.1
+  numpy                             : 2.5.3
+  Repository root                   : D:\SSN College of Engineering\4th Year - 7th Sem\FYP\calcmate-project
+  Output directory                  : D:\SSN College of Engineering\4th Year - 7th Sem\FYP\calcmate-project\outputs
+
+[ Figure 1: curriculum knowledge graph - loading data ]---------------------------------------------
+  [OK]   Loaded data\concepts.csv  rows=84  columns=['id', 'grade', 'subject', 'unit', 'concept', 'learning_objective', 'coverage_status', 'is_active']
+  [OK]   Loaded data\prerequisite_edges.csv  rows=73  columns=['source_concept_id', 'target_concept_id', 'relationship_type', 'confidence']
+
+[ Knowledge graph: structure ]----------------------------------------------------------------------
+  Concepts (nodes)                  : 84
+  Prerequisite relations (edges)    : 73
+  Is a DAG (no cycles)              : True
+  Weakly connected components       : 15
+  Isolated concepts                 : 8
+  Edge density                      : 0.01047
+  Mean out-degree                   : 0.87
+  [OK]   Graph is acyclic: prerequisite ordering is well defined
+  Longest prerequisite chain (nodes): 10
+  Chain                             : M301 -> M302 -> M303 -> M304 -> M307 -> M308 -> M403 -> M404 -> M503 -> M529
+
+[ Knowledge graph: per-grade breakdown ]------------------------------------------------------------
+  +---------+----------+----------+-----------+--------------+
+  | Grade   | Concepts | In-edges | Out-edges | Entry points |
+  +---------+----------+----------+-----------+--------------+
+  | Grade 1 | 10       | 4        | 7         | 6            |
+  | Grade 2 | 10       | 9        | 6         | 3            |
+  | Grade 3 | 20       | 13       | 27        | 7            |
+  | Grade 4 | 21       | 20       | 19        | 1            |
+  | Grade 5 | 23       | 27       | 14        | 0            |
+  +---------+----------+----------+-----------+--------------+
+  Within-grade edges                : 46
+  Cross-grade edges                 : 27
+  [OK]   No edge points backwards in grade level
+
+[ Knowledge graph: most influential concepts ]------------------------------------------------------
+  Top 5 foundations (most dependants):
+  +------------+-------+------------+----------------------------------+
+  | Concept ID | Grade | Dependants | Title                            |
+  +------------+-------+------------+----------------------------------+
+  | M101       | 1     | 4          | Counting objects up to 20        |
+  | M308       | 3     | 4          | Multiplication tables 2–10       |
+  | M302       | 3     | 3          | Place value (ones/tens/hundreds) |
+  | M309       | 3     | 3          | Basic shapes recognition         |
+  | M401       | 4     | 3          | Numbers up to 10000              |
+  +------------+-------+------------+----------------------------------+
+  Top 5 most demanding (most prerequisites):
+  +------------+-------+---------------+--------------------------------------------------+
+  | Concept ID | Grade | Prerequisites | Title                                            |
+  +------------+-------+---------------+--------------------------------------------------+
+  | M204       | 2     | 2             | Addition of two-digit numbers with regrouping    |
+  | M205       | 2     | 2             | Subtraction of two-digit numbers without borrowi |
+  | M506       | 5     | 2             | Addition of fractions (unlike denominators)      |
+  | M514       | 5     | 2             | Unit conversion (length/weight/capacity)         |
+  | M517       | 5     | 2             | Multiplication of fractions                      |
+  +------------+-------+---------------+--------------------------------------------------+
+
+[ Knowledge graph: data-quality checks ]------------------------------------------------------------
+  [OK]   Every prerequisite edge references known concepts
+  [OK]   No duplicate edges
+  [OK]   No self-loops
+
+[ Knowledge graph: layout ]-------------------------------------------------------------------------
+  Layer count (depth levels)        : 10
+  Nodes per layer                   : {0: 17, 1: 15, 2: 12, 3: 13, 4: 10, 5: 6, 6: 4, 7: 4, 8: 2, 9: 1}
+
+[ Figure 1: rendering ]-----------------------------------------------------------------------------
+  [OK]   Saved 01_curriculum_knowledge_graph.png (1,240.0 KB)
+  [OK]   Saved 01_curriculum_knowledge_graph.svg (318.3 KB)
+  [OK]   knowledge_graph finished in 2.15s
+
+[ Figure 2: learner-state estimation - loading data ]-----------------------------------------------
+  [OK]   Loaded data\bkt_validation\summary.json  top-level keys=['gate', 'estimators', 'verdicts', 'best_estimator']
+
+[ Learner-state estimation: validation metrics ]----------------------------------------------------
+  Estimators compared               : ['BKT', 'MomentMatching']
+  Seeds per estimator               : {'BKT': 3, 'MomentMatching': 3}
+  Observation days                  : 31
+  Best gated estimator              : MomentMatching
+  +----------------+------------+-------------+-----------+---------+
+  | Estimator      | MAE (mean) | RMSE (mean) | Pearson r | Verdict |
+  +----------------+------------+-------------+-----------+---------+
+  | BKT            | 0.2530     | 0.3063      | 0.7707    | FAIL    |
+  | MomentMatching | 0.0918     | 0.1143      | 0.9095    | PASS    |
+  +----------------+------------+-------------+-----------+---------+
+  BKT MAE std across seeds          : 0.0006
+  MomentMatching MAE std across seeds: 0.0035
+
+[ Learner-state estimation: convergence (seed 0) ]--------------------------------------------------
+  +----------------+-------------+-------------+-----------+------------+-----------------+
+  | Estimator      | Day-1 error | Final error | Min error | Min on day | Error reduction |
+  +----------------+-------------+-------------+-----------+------------+-----------------+
+  | BKT            | 0.2583      | 0.2522      | 0.2331    | 15         | +2.4%           |
+  | MomentMatching | 0.2384      | 0.0913      | 0.0913    | 31         | +61.7%          |
+  +----------------+-------------+-------------+-----------+------------+-----------------+
+  [INFO] MAE: BKT - MomentMatching = +0.1612 (BKT worse)
+
+[ Figure 2: rendering ]-----------------------------------------------------------------------------
+  [OK]   Saved 02_learner_state_estimation.png (247.8 KB)
+  [OK]   Saved 02_learner_state_estimation.svg (74.6 KB)
+  [OK]   learner_state finished in 0.73s
+
+[ Figure 3: scheduler policy metrics - loading data ]-----------------------------------------------
+  [OK]   Loaded data\stage4_evaluation_results.json  top-level keys=['Round-Robin', 'Static Timetable', 'Needs-Only (Ablated)', 'CALCMATE']
+  Policies compared                 : ['Round-Robin', 'Static Timetable', 'Needs-Only (Ablated)', 'CALCMATE']
+  Metrics                           : ['learning_gap_coverage', 'mastery_resolution_rate', 'prerequisite_violations', 'average_instructional_delay', 'time_to_mastery', 'switching_cost']
+  [OK]   All policies report all metrics
+
+[ Scheduler: raw metric values (^ higher is better, v lower is better) ]----------------------------
+  +----------------------+-------------------------+---------------------------+---------------------------+-------------------------------+-------------------+------------------+
+  | Policy               | learning_gap_coverage ^ | mastery_resolution_rate ^ | prerequisite_violations v | average_instructional_delay v | time_to_mastery v | switching_cost v |
+  +----------------------+-------------------------+---------------------------+---------------------------+-------------------------------+-------------------+------------------+
+  | Round-Robin          | 0.187                   | 0.004                     | 111.280                   | 10.770                        | 11.440            | 11.000           |
+  | Static Timetable     | 0.179                   | 0.011                     | 67.400                    | 10.780                        | 8.530             | 2.000            |
+  | Needs-Only (Ablated) | 0.175                   | 0.003                     | 237.120                   | 10.940                        | 10.150            | 4.560            |
+  | CALCMATE             | 0.169                   | 0.008                     | 0.000                     | 10.810                        | 10.410            | 9.120            |
+  +----------------------+-------------------------+---------------------------+---------------------------+-------------------------------+-------------------+------------------+
+
+[ Scheduler: normalised scores (0 = worst policy, 1 = best policy) ]--------------------------------
+  +----------------------+--------------+--------------------+---------------------+-------------------+-----------------+----------------+-------+------+
+  | Policy               | Gap coverage | Mastery resolution | Prerequisite safety | Instruction delay | Time to mastery | Switching cost | Mean  | Rank |
+  +----------------------+--------------+--------------------+---------------------+-------------------+-----------------+----------------+-------+------+
+  | Round-Robin          | 1.00         | 0.11               | 0.53                | 1.00              | 0.00            | 0.00           | 0.441 | 3    |
+  | Static Timetable     | 0.56         | 1.00               | 0.72                | 0.94              | 1.00            | 1.00           | 0.870 | 1    |
+  | Needs-Only (Ablated) | 0.32         | 0.00               | 0.00                | 0.00              | 0.44            | 0.72           | 0.246 | 4    |
+  | CALCMATE             | 0.00         | 0.57               | 1.00                | 0.76              | 0.35            | 0.21           | 0.483 | 2    |
+  +----------------------+--------------+--------------------+---------------------+-------------------+-----------------+----------------+-------+------+
+
+[ Scheduler: per-metric winners ]-------------------------------------------------------------------
+  +---------------------+------------------+--------+
+  | Metric              | Best policy      | Value  |
+  +---------------------+------------------+--------+
+  | Gap coverage        | Round-Robin      | 0.187  |
+  | Mastery resolution  | Static Timetable | 0.011  |
+  | Prerequisite safety | CALCMATE         | 0.000  |
+  | Instruction delay   | Round-Robin      | 10.770 |
+  | Time to mastery     | Static Timetable | 8.530  |
+  | Switching cost      | Static Timetable | 2.000  |
+  +---------------------+------------------+--------+
+
+[ Scheduler: CALCMATE vs best baseline ]------------------------------------------------------------
+  +---------------------+----------+------------------+----------------+---------+---------+
+  | Metric              | CALCMATE | Best baseline    | Baseline value | Diff    | Outcome |
+  +---------------------+----------+------------------+----------------+---------+---------+
+  | Gap coverage        | 0.169    | Round-Robin      | 0.187          | -9.9%   | worse   |
+  | Mastery resolution  | 0.008    | Static Timetable | 0.011          | -30.6%  | worse   |
+  | Prerequisite safety | 0.000    | Static Timetable | 67.400         | -100.0% | better  |
+  | Instruction delay   | 10.810   | Round-Robin      | 10.770         | +0.4%   | worse   |
+  | Time to mastery     | 10.410   | Static Timetable | 8.530          | +22.0%  | worse   |
+  | Switching cost      | 9.120    | Static Timetable | 2.000          | +356.0% | worse   |
+  +---------------------+----------+------------------+----------------+---------+---------+
+  Metrics where CALCMATE leads      : 1/6
+  CALCMATE overall rank             : 2 of 4
+
+[ Figure 3: rendering ]-----------------------------------------------------------------------------
+  [OK]   Saved 03_scheduler_policy_metrics.png (470.1 KB)
+  [OK]   Saved 03_scheduler_policy_metrics.svg (91.0 KB)
+  [OK]   scheduler finished in 0.68s
+
+[ Run summary ]-------------------------------------------------------------------------------------
+  +-----------------+----------------------------------------------------------------------+-------+
+  | Figure          | Files                                                                | Time  |
+  +-----------------+----------------------------------------------------------------------+-------+
+  | knowledge_graph | 01_curriculum_knowledge_graph.png, 01_curriculum_knowledge_graph.svg | 2.15s |
+  | learner_state   | 02_learner_state_estimation.png, 02_learner_state_estimation.svg     | 0.73s |
+  | scheduler       | 03_scheduler_policy_metrics.png, 03_scheduler_policy_metrics.svg     | 0.68s |
+  +-----------------+----------------------------------------------------------------------+-------+
+  Manifest                          : figure_manifest.json
+  Total runtime                     : 3.63s
+  [OK]   Generated report figures in D:\SSN College of Engineering\4th Year - 7th Sem\FYP\calcmate-project\outputs
