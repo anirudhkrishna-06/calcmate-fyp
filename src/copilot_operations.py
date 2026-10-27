@@ -751,6 +751,31 @@ def op_explain_concept(intent: IntentResult, request: CopilotRequest) -> Operati
 
     chunks = _retrieve_for_concept(concept_phrase, grade, k=4)
     ncert = None
+    student_note = None
+    student_id = params.get("student_id") or request.student_id
+    concept_id = params.get("concept_id")
+    if student_id and request.workspace_id and concept_id:
+        # Explanation requests launched from a learner screen should respect
+        # the learner's observed state. This is evidence-aware tailoring, not
+        # a generated diagnosis.
+        try:
+            db_path = _find_db()
+            state = li.get_student_concept_state(request.workspace_id, student_id, concept_id, db_path) if db_path else None
+            if state:
+                from src.classroom_queries import roster
+                roster_rows = roster(request.workspace_id)
+                learner = next((row for row in roster_rows if row["id"] == student_id), None)
+                label = learner["name"] if learner else student_id
+                status = state.get("state_status", "unknown")
+                student_note = f"For {label}, the recorded state for {concept_phrase} is {status} ({state.get('evidence_count', 0)} assessment(s))."
+                if status == "needs_support":
+                    student_note += " Start with a concrete model and a short individual check before moving on."
+                elif status == "unknown":
+                    student_note += " Begin with a quick diagnostic check; no mastery claim can be made yet."
+        except Exception:
+            # A concept explanation must remain available even if optional
+            # learner-state enrichment is unavailable.
+            student_note = None
     if chunks:
         top = chunks[0]
         ncert = {"source_pdf": top["source_pdf"], "grade": top["grade"],
@@ -759,6 +784,8 @@ def op_explain_concept(intent: IntentResult, request: CopilotRequest) -> Operati
     else:
         evidence = f"No NCERT passages found for '{concept_phrase}' at Grade {grade}."
 
+    if student_note:
+        evidence += " " + student_note
     return OperationResult(
         operation="explain_concept",
         status=OperationStatus.OK if chunks else OperationStatus.PARTIAL,

@@ -472,6 +472,7 @@ def run_question(q: str, session: Session) -> None:
         context=build_context(chunks),
         question=q,
         grade=session.grade,
+        subject="Math",
     )
 
     # Peek: launch streaming directly; the first token arrives in ~1s when warm

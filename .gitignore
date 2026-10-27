@@ -13,3 +13,4 @@ __pycache__/
 data/copilot_log.jsonl
 data/retrieval_log.jsonl
 docs/report
+MODEL/

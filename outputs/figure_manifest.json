@@ -1,0 +1,76 @@
+{
+  "source": "repository artefacts",
+  "generated_at": "2026-10-20T10:34:22",
+  "timings_seconds": {
+    "knowledge_graph": 2.15,
+    "learner_state": 0.73,
+    "scheduler": 0.68
+  },
+  "figures": {
+    "knowledge_graph": {
+      "nodes": 84,
+      "edges": 73,
+      "acyclic": true,
+      "diagnostics": {
+        "acyclic": true,
+        "components": 15,
+        "longest_chain": 10,
+        "cross_grade_edges": 27,
+        "skipped_edges": 0,
+        "duplicate_edges": 0
+      },
+      "files": [
+        "01_curriculum_knowledge_graph.png",
+        "01_curriculum_knowledge_graph.svg"
+      ]
+    },
+    "learner_state": {
+      "best_estimator": "MomentMatching",
+      "estimators": {
+        "BKT": {
+          "mae_mean": 0.2529512955779499,
+          "rmse_mean": 0.30625620294516476,
+          "pearson_mean": 0.7706915284638503,
+          "verdict": "FAIL"
+        },
+        "MomentMatching": {
+          "mae_mean": 0.09177224260871202,
+          "rmse_mean": 0.11433029935819143,
+          "pearson_mean": 0.909474750160046,
+          "verdict": "PASS"
+        }
+      },
+      "files": [
+        "02_learner_state_estimation.png",
+        "02_learner_state_estimation.svg"
+      ]
+    },
+    "scheduler": {
+      "policies": [
+        "Round-Robin",
+        "Static Timetable",
+        "Needs-Only (Ablated)",
+        "CALCMATE"
+      ],
+      "metric_names": [
+        "Gap coverage",
+        "Mastery resolution",
+        "Prerequisite safety",
+        "Instruction delay",
+        "Time to mastery",
+        "Switching cost"
+      ],
+      "overall_scores": {
+        "Round-Robin": 0.440770967503146,
+        "Static Timetable": 0.8702413891855119,
+        "Needs-Only (Ablated)": 0.24600980428383137,
+        "CALCMATE": 0.48286115240679095
+      },
+      "calcmate_prerequisite_violations": 0.0,
+      "files": [
+        "03_scheduler_policy_metrics.png",
+        "03_scheduler_policy_metrics.svg"
+      ]
+    }
+  }
+}

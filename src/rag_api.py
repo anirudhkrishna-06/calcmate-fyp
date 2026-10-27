@@ -150,7 +150,17 @@ def _is_copilot_request(request: ChatRequest) -> bool:
     structured context field. Plain RAG questions (workspace_id=None) pass
     through the original pipeline unchanged.
     """
-    selected = bool(request.workspace_id or request.student_id or request.concept_id)
+    # A screen context is meaningful even when the caller has not selected a
+    # learner or concept yet (for example, the Assistant home screen).  Keep
+    # those requests on the same router so the backend can make a deliberate
+    # choice instead of silently falling through to generic textbook Q&A.
+    selected = bool(
+        request.workspace_id
+        or request.student_id
+        or request.concept_id
+        or request.screen_context
+        or request.classroom_evidence
+    )
     _trace(
         "route_check",
         copilot=selected,
@@ -371,8 +381,10 @@ def chat(request: ChatRequest, http_request: Request, authorization: str | None 
     with _lock:
         try:
             copilot, retriever = _get_runtime()
+            grade_parser = getattr(copilot, "requested_grade", lambda _question, default: default)
+            query_grade = grade_parser(request.question, request.grade)
             answer, chunks = copilot.answer_question(
-                retriever, request.question, request.grade, subject=request.subject,
+                retriever, request.question, query_grade, subject=request.subject,
                 k=request.k, model=os.getenv("CALCMATE_RAG_MODEL", copilot.DEFAULT_MODEL),
                 stream=False, use_llm=request.use_llm,
             )
@@ -391,7 +403,7 @@ def chat(request: ChatRequest, http_request: Request, authorization: str | None 
         mode = "retrieval-only"
     else:
         mode = "generated"
-    _trace("plain_rag_complete", mode=mode, chunks=len(chunks), answer_length=len(answer))
+    _trace("plain_rag_complete", mode=mode, grade=query_grade, chunks=len(chunks), answer_length=len(answer))
     return ChatResponse(answer=answer, mode=mode, chunks=[ChunkResponse(
         chunk_id=c.chunk_id, text=c.text, grade=c.grade, subject=c.subject,
         source_pdf=c.source_pdf, source_url=getattr(c,"source_url",None),source_pages=getattr(c,"source_pages",None),resource_kind=getattr(c,"resource_kind","textbook_passage"),chunk_index=c.chunk_index, score=c.score,

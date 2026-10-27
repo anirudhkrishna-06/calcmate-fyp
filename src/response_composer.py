@@ -67,9 +67,14 @@ def compose_deterministic(
 
     # ── Error / unavailable ────────────────────────────────────────────────────
     if is_error:
-        answer = "⚠️ An internal error occurred while processing your request."
+        # Internal exception text can contain SQL/schema details and is not a
+        # useful or safe classroom response. Keep it in server logs instead.
+        import logging
         if operation_result.error_detail:
-            answer += f"\n\nDetail: {operation_result.error_detail}"
+            logging.getLogger("calcmate.copilot").error(
+                "Copilot operation failed: %s", operation_result.error_detail
+            )
+        answer = "I couldn't complete that classroom request. Please try again."
         return CopilotResponse(
             answer=answer,
             limitations=operation_result.limitations,
