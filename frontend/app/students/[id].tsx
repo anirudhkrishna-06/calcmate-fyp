@@ -425,6 +425,8 @@ export default function StudentDetailsScreen() {
                         grade: String(student.grade),
                         prompt: `Suggest a concrete activity for ${needsSupport[0].concept_title} in Grade ${student.grade}.`,
                         studentId: student.id,
+                        studentName: student.name,
+                        studentThread: "true",
                         conceptId: needsSupport[0].concept_id,
                         screenContext: "student_detail",
                       },

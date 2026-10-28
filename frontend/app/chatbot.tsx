@@ -144,7 +144,7 @@ function Mark({ size = 28 }: { size?: number }) {
         justifyContent: "center",
       }}
     >
-      <Ionicons name="sparkles" size={size * 0.5} color="#E8C97A" />
+      <Ionicons name="chatbubble-outline" size={size * 0.5} color="#E8C97A" />
     </View>
   );
 }
@@ -367,9 +367,7 @@ export default function ChatbotScreen({ embedded = false }: { embedded?: boolean
   }
   async function newChat() {
     try {
-      await switchTo(studentMode && params.studentId
-        ? await getOrCreateStudentConversation(params.studentId, studentName, grade)
-        : await createConversation(grade));
+      await switchTo(await createConversation(grade));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not create chat.");
     }
@@ -395,14 +393,14 @@ export default function ChatbotScreen({ embedded = false }: { embedded?: boolean
       }
       await refresh(id);
     };
-    const context =
-      params.studentId || params.conceptId || params.screenContext
-        ? {
-            student_id: params.studentId,
-            concept_id: params.conceptId,
-            screen_context: params.screenContext,
-          }
-        : undefined;
+    // Context follows the selected conversation, including chats from history.
+    // A topic supplied by the profile shortcut applies only to its first prompt.
+    const initialPrompt = messages.length === 0 && text.trim() === params.prompt?.trim();
+    const context = {
+      student_id: conversation.student_id ?? undefined,
+      concept_id: initialPrompt ? params.conceptId : undefined,
+      screen_context: conversation.student_id ? "student_copilot" : undefined,
+    };
     try {
       if (retryId) await retryMessage(retryId, saved);
       else await sendMessage(id, text, selectedGrade, saved, undefined, context);
@@ -518,7 +516,7 @@ export default function ChatbotScreen({ embedded = false }: { embedded?: boolean
           <AssistantMessage text={item.text} onResize={scrollToEnd} />
           {nextStep ? (
             <View style={styles.nextStepCard}>
-              <Ionicons name="sparkles" size={14} color={P.gold} />
+              <Ionicons name="chatbubble-outline" size={14} color={P.gold} />
               <Text style={styles.nextStepText}>{nextStep}</Text>
             </View>
           ) : null}
@@ -777,11 +775,11 @@ function EmptyClassroomArtwork() {
           { transform: [{ scale: sparkleScale }] },
         ]}
       >
-        <Ionicons name="sparkles" size={25} color="#D6A82D" />
+        <Ionicons name="chatbubble-outline" size={25} color="#D6A82D" />
       </Animated.View>
 
       <View style={emptyStyles.star}>
-        <Ionicons name="star" size={13} color={EMPTY_COLORS.coral} />
+        <Ionicons name="ellipse" size={13} color={EMPTY_COLORS.coral} />
       </View>
     </View>
   );
@@ -848,11 +846,11 @@ function EmptyClassroomArtwork() {
           </View>
         ) : null}
 
-        {studentMode ? (
+        {conversation?.student_id ? (
           <View style={styles.studentModeBanner}>
             <Mark size={22} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.studentModeTitle}>{studentName} — AI Copilot</Text>
+              <Text style={styles.studentModeTitle}>{conversation.title}</Text>
               <Text style={styles.studentModeSubtitle}>Grounded in this learner's live classroom evidence</Text>
             </View>
             <Ionicons name="person-circle-outline" size={22} color={P.gold} />

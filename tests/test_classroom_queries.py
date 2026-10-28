@@ -44,6 +44,48 @@ def classroom(tmp_path, monkeypatch):
         yield evidence, ask
 
 
+@pytest.mark.parametrize("context", [{}, {"student_id": "g1-a", "screen_context": "student_copilot"}])
+def test_natural_class_performance_question(classroom, context):
+    evidence, ask = classroom
+    supplied = copy.deepcopy(evidence)
+    supplied["students"] = [dict(id="g1-a", name="Nila", grade=1), dict(id="g1-b", name="Ravi", grade=1), dict(id="g1-c", name="Uma", grade=1)]
+    supplied["attendance"] = []
+    supplied["assessments"] = [dict(id="g1-score", student_id="g1-b", concept_id="M101", date="2026-10-19", score=4, maximum=10, created_at="2026-10-19T09:00:00Z", updated_at="2026-10-19T09:00:00Z")]
+    response = ask("How about other students performance in counting objects upto 20 in grade 1?", grade=1, supplied=supplied, **context)
+    data = response["structured_data"]
+    assert data["concept_ids"] == ["M101"]
+    assert data["total_students"] == 3
+    assert data["counts"]["needs_support"] == 1
+    assert data["counts"]["unknown"] == 2
+    assert "Ravi" in response["answer"]
+    assert "Please clarify" not in response["answer"]
+
+
+def test_overall_class_performance_without_topic(classroom):
+    _, ask = classroom
+    response = ask("How is my class performing in Grade 4?")
+    assert response["structured_data"]["total_students"] == 4
+    assert "overall Maths performance" in response["answer"]
+
+
+def test_class_assessment_question_overrides_student_thread(classroom):
+    _, ask = classroom
+    response = ask("What was the last assessment given for Grade 4 students?",
+                   student_id="s1", screen_context="student_copilot")
+    rows = response["structured_data"]["assessments"]
+    assert len(rows) == 1
+    assert rows[0]["date"] == "2026-10-19"
+    assert all(student["grade"] == 4 for student in response["structured_data"]["students"])
+    assert len(response["structured_data"]["students"]) == 4
+
+
+def test_student_thread_can_ask_about_another_named_student(classroom):
+    _, ask = classroom
+    response = ask("Show Kabir Ali's last assessment on M403.",
+                   student_id="s1", screen_context="student_copilot")
+    assert [row["student_id"] for row in response["structured_data"]["assessments"]] == ["s2"]
+
+
 @pytest.mark.parametrize("question", [
     "Who needs support in grade 4 on last assessment?",
     "who need support in grade 4 on the latest assessment?",

@@ -330,6 +330,8 @@ def _extract_concept_phrase(text: str) -> Optional[str]:
     m_id = re.search(r"\b(m\d{3})\b", text, re.IGNORECASE)
     if m_id:
         return m_id.group(1).upper()
+    if re.search(r"\bcounting\s+objects\s+(?:up\s*to|upto)\s+20\b", text, re.I):
+        return "Counting objects up to 20"
     specific = re.search(r"\b(long division|division with remainder|division as equal sharing|equivalent fractions?|fraction representation|addition of fractions(?: with (?:un)?like denominators)?|skip counting)\b", text, re.I)
     if specific:
         return specific[0]

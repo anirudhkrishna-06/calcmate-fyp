@@ -294,6 +294,7 @@ def _run_copilot_pipeline(request: ChatRequest) -> ChatResponse:
             )
         except Exception as exc:
             _trace("rag_enrichment_error", error_type=type(exc).__name__)
+            logging.getLogger("uvicorn.error").exception("CalcMate curriculum generation failed")
 
     if not rag_chunks and op_result.structured_data and "chunks" in op_result.structured_data:
         rag_chunks = op_result.structured_data["chunks"]

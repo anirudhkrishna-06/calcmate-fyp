@@ -33,7 +33,6 @@ export function StudentAiBar({ studentName, grade, knowledge, onSubmit }: Props)
   return (
     <View style={styles.shell}>
       <View style={styles.inputRow}>
-        <View style={styles.sparkle}><Ionicons name="sparkles" size={18} color={colors.gold} /></View>
         <TextInput
           value={value}
           onChangeText={setValue}

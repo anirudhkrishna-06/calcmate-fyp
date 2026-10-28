@@ -139,7 +139,7 @@ export async function restoreBackupJson(json:string) {
     }
     if(backup.version===1 && backup.chatHistory.length) {
       const id=`legacy-${session.workspaceId}`;
-      await tx.runAsync("INSERT INTO conversations SELECT ?,workspace_id,'Earlier chat',4,MIN(created_at),MAX(updated_at) FROM messages WHERE workspace_id=? GROUP BY workspace_id",id,session.workspaceId);
+      await tx.runAsync("INSERT INTO conversations(id,workspace_id,title,grade,created_at,updated_at) SELECT ?,workspace_id,'Earlier chat',4,MIN(created_at),MAX(updated_at) FROM messages WHERE workspace_id=? GROUP BY workspace_id",id,session.workspaceId);
       await tx.runAsync("INSERT INTO message_details(message_id,workspace_id,conversation_id,status) SELECT id,workspace_id,?,'completed' FROM messages WHERE workspace_id=?",id,session.workspaceId);
     }
     if(backup.version<3)await repairCanonicalPrerequisites(tx,session.workspaceId);

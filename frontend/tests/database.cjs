@@ -249,6 +249,7 @@ async function run() {
   let chat=require('@/services/chatService'); const rag=require('@/services/ragClient');
   network={isConnected:true,isInternetReachable:true}; process.env.EXPO_PUBLIC_API_BASE_URL='http://rag.test:8000';
   const c1=await chat.createConversation(4); assert.equal((await chat.conversationMessages(c1.id)).length,0);
+  assert.equal((await chat.listConversations()).find(c=>c.id===c1.id).student_id,null,'New chats must remain unscoped after the student-thread migration.');
   const source={chunk_id:7,text:'Equal groups',grade:4,subject:'Math',source_pdf:'math.pdf',chunk_index:1,score:0.8,used_fallback:false};
   const response={answer:'## Multiplication\nUse **equal groups** and $2 \\times 3=6$.',chunks:[source]};
   let release; let posted;

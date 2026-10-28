@@ -43,14 +43,13 @@ def mentioned_students(text, students):
 
 
 def bind_student_context(request):
-    # A student Copilot thread is explicitly scoped by its conversation. Do
-    # not let a casual name in a follow-up silently switch the learner.
-    if request.student_id and request.screen_context == "student_copilot":
-        return
     found, ambiguous = mentioned_students(request.message, roster(request.workspace_id))
     if len(found) == 1 and not ambiguous:
         request.student_id = found[0]["id"]
     elif len(found) > 1 or ambiguous:
+        request.student_id = None
+    elif re.search(r"\b(?:students|learners|children|classroom|whole class|all grades)\b", request.message, re.I):
+        # Explicit class questions override the profile's default learner.
         request.student_id = None
     elif re.search(r"'s\s+(?:mastery|state|progress|knowledge|understanding|scores?)\b", normalize(request.message), re.I) and not re.search(r"\bthis student's\b", normalize(request.message), re.I):
         # An explicit unknown name must not inherit another learner's screen ID.
@@ -104,8 +103,10 @@ def classify_record_query(text, request, params):
         kind = "comparison"
     elif not is_support and re.search(r"\b(?:how many|number of|count|total)\s+(?:the\s+)?(?:students|learners|children)\b", lower):
         kind = "count"
-    elif re.search(r"\b(?:last\s+(?:two|three|five|\d+)|assessment history|score history|scores? and dates?|marks? and dates?|when.*assess|latest assessment date)\b", lower) or (latest and not is_support and (request.student_id or params.get("student_name"))):
+    elif re.search(r"\b(?:last\s+(?:two|three|five|\d+)|assessment history|score history|scores? and dates?|marks? and dates?|when.*assess|latest assessment date)\b", lower) or (latest and not is_support):
         kind, intent = "history", I.GET_ASSESSMENT_HISTORY
+    elif re.search(r"\b(?:performance|performing|how (?:is|are).*(?:doing|progressing)|class progress)\b", lower) and re.search(r"\b(?:students|learners|children|class|classroom|grade|group)\b", lower):
+        kind, intent = "performance", I.CLASSROOM_LEARNING_SUMMARY
     elif is_support and (latest or params.get("concept_phrase") or params.get("concept_id")):
         kind, intent = "group", I.FIND_STUDENTS_BY_CONCEPT
     elif re.search(r"\b(?:mastery|knowledge state|understanding|state)\b", lower) and not re.search(r"\b(?:prerequisite|group|classroom)\b", lower):
@@ -202,6 +203,8 @@ def execute_record_query(intent, request):
         message = f"Attendance on {day}, Grade {grade}: " + ("; ".join(f"{s['name']}: {s['status']}" for s in rows) if rows else f"no students recorded as {wanted or 'attending'}") + "."
         return ok(message)
     if kind in {"state", "history", "comparison"}:
+        if kind == "history" and not selected and not request.student_id and not p.get("student_name"):
+            selected = students
         if not selected:
             return partial("No matching student was identified. Please specify the student's full name or select a student.")
         if kind == "comparison" and len(selected) < 2:
@@ -235,9 +238,13 @@ def execute_record_query(intent, request):
             if analysis["prerequisites"]:
                 graph = f"Prerequisite readiness score: {analysis['kg_prerequisite_readiness']:.2f}. " + analysis["recommendation"]
         return ok("\n".join(paragraphs), views[0] if len(views) == 1 else dict(students=views, concept_ids=cids), graph_finding=graph)
-    if kind == "group":
+    if kind in {"group", "performance"}:
         if p.get("all_grades"):
             return partial("Please specify one grade for topic or latest-assessment support, so its curriculum and assessment evidence can be checked consistently.")
+        if kind == "performance" and not cids:
+            cids = [cid for cid, node in kg.nodes(data=True) if int(node["grade"]) == grade]
+            topic = "overall Maths performance"
+            result["concept_ids"] = cids
         if not cids and not p.get("latest_assessment"):
             return partial("Please specify a topic or ask about the last assessment.")
         selection = p["selection"]
@@ -273,7 +280,7 @@ def execute_record_query(intent, request):
             return ok(message)
         if len(cids) == 1:
             result = li.get_group_concept_summary(w, grade, cids[0], "request-snapshot")
-            result.update(basis="learner_state", as_of=metadata["as_of"], estimator_version=metadata["estimator_version"])
+            result.update(concept_ids=cids, basis="learner_state", as_of=metadata["as_of"], estimator_version=metadata["estimator_version"])
         else:
             rows = []
             for s in students:
@@ -287,6 +294,12 @@ def execute_record_query(intent, request):
         message = f"Grade {grade}, {topic}: {result.get('total_students', 0)} students total — {counts.get('needs_support', 0)} need support, {counts.get('likely_ready', 0)} likely ready, {counts.get('unknown', 0)} unassessed, {counts.get('insufficient', 0)} with intermediate or incomplete evidence. "
         label = {"needs_support": "Students needing support", "likely_ready": "Students likely ready", "unknown": "No assessment evidence"}[selection]
         message += label + ": " + (", ".join(s["name"] for s in chosen) or "none") + "."
+        if kind == "performance":
+            message += " Student performance: " + "; ".join(
+                f"{s['name']}: {s['state_status'].replace('_', ' ')}"
+                + (f" ({s['mastery_estimate']:.0%} estimated mastery)" if s.get("mastery_estimate") is not None else "")
+                for s in result.get("students", [])
+            ) + "."
         message += f" Based on estimated learner states from recorded assessments, using evidence as of {metadata['as_of']}."
         if selection != "unknown" and unknown:
             message += " No assessment evidence: " + ", ".join(unknown) + "."
