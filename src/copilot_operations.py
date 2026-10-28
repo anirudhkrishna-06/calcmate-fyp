@@ -38,6 +38,29 @@ def _rag_limitation(grade: int) -> Optional[str]:
     return None
 
 
+def _student_focus_concept(request: CopilotRequest, grade: int) -> tuple[Optional[str], Optional[str]]:
+    """Choose the learner's highest-priority recorded concept for follow-ups."""
+    if not request.student_id or not request.workspace_id:
+        return None, None
+    db_path = _find_db()
+    if not db_path:
+        return None, None
+    try:
+        gaps = li.get_student_learning_gaps(request.workspace_id, request.student_id, grade, db_path)
+        if gaps:
+            target = gaps[0]["concept_id"]
+        else:
+            with li._connect(db_path) as conn:
+                row = conn.execute("SELECT id FROM concepts WHERE workspace_id=? AND grade=? ORDER BY id LIMIT 1", (request.workspace_id, grade)).fetchone()
+            target = row[0] if row else None
+        if not target:
+            return None, None
+        kg = load_kg()
+        return target, kg.nodes[target].get("concept", target) if target in kg.nodes else target
+    except Exception:
+        return None, None
+
+
 def _retrieve_for_concept(concept_phrase: str, grade: int, k: int = 3) -> list[dict]:
     """Call the retriever; return list of chunk dicts (safe even if unavailable)."""
     try:
@@ -252,6 +275,17 @@ def op_get_student_progress(intent: IntentResult, request: CopilotRequest) -> Op
 
     try:
         view = li.get_student_knowledge_view(workspace_id, student_id, db_path)
+        with li._connect(db_path) as conn:
+            observations = [dict(row) for row in conn.execute(
+                "SELECT note,created_at,updated_at FROM observations WHERE workspace_id=? AND student_id=? ORDER BY updated_at DESC LIMIT 3",
+                (workspace_id, student_id),
+            ).fetchall()]
+            latest_attendance = conn.execute(
+                "SELECT date,status FROM attendance WHERE workspace_id=? AND student_id=? ORDER BY date DESC LIMIT 1",
+                (workspace_id, student_id),
+            ).fetchone()
+        view["recent_observations"] = observations
+        view["latest_attendance"] = dict(latest_attendance) if latest_attendance else None
         assessed = view.get("assessed_count", 0)
         total = assessed + view.get("unassessed_count", 0)
         needs_support = view.get("needs_support_count", 0)
@@ -267,6 +301,10 @@ def op_get_student_progress(intent: IntentResult, request: CopilotRequest) -> Op
         if gaps_with_prereq:
             names = [c.get("concept_title", c["concept_id"]) for c in gaps_with_prereq[:3]]
             graph_finding = f"Prerequisite gaps detected on: {', '.join(names)}."
+        if observations:
+            evidence += f" Latest teacher note: {observations[0]['note']}"
+        if latest_attendance:
+            evidence += f" Latest attendance record: {latest_attendance['date']} ({latest_attendance['status']})."
 
         return OperationResult(
             operation="get_student_progress",
@@ -364,6 +402,10 @@ def op_explain_learning_difficulty(intent: IntentResult, request: CopilotRequest
     concept_id: Optional[str] = params.get("concept_id")
     concept_phrase: str = params.get("concept_phrase", concept_id or "the concept")
     grade: int = int(params.get("grade", request.grade))
+    if not concept_id:
+        concept_id, focused_title = _student_focus_concept(request, grade)
+        if concept_id:
+            concept_phrase = focused_title or concept_id
     limitations: list[str] = []
     lim = _rag_limitation(grade)
     if lim:
@@ -372,6 +414,18 @@ def op_explain_learning_difficulty(intent: IntentResult, request: CopilotRequest
     kg = load_kg()
     prereq_ids = list(kg.predecessors(concept_id)) if concept_id and concept_id in kg.nodes else []
     graph_finding = None
+    learner_state = None
+    learner_name = request.student_id
+    if request.student_id and request.workspace_id and concept_id:
+        db_path = _find_db()
+        if db_path:
+            try:
+                learner_state = li.get_student_concept_state(request.workspace_id, request.student_id, concept_id, db_path)
+                from src.classroom_queries import roster
+                learner = next((row for row in roster(request.workspace_id) if row["id"] == request.student_id), None)
+                learner_name = learner["name"] if learner else request.student_id
+            except Exception:
+                learner_state = None
     if prereq_ids:
         prereq_names = [kg.nodes.get(pid, {}).get("concept", pid) for pid in prereq_ids]
         graph_finding = (
@@ -387,15 +441,16 @@ def op_explain_learning_difficulty(intent: IntentResult, request: CopilotRequest
         ncert = {"source_pdf": top["source_pdf"], "grade": top["grade"],
                  "text_snippet": top["text"][:200]}
 
-    evidence = (
-        f"Difficulty analysis for '{concept_phrase}' (Grade {grade}): "
-        f"{len(prereq_ids)} direct prerequisite(s) identified in the curriculum graph."
-    )
+    evidence = f"Difficulty analysis for '{concept_phrase}' (Grade {grade}): {len(prereq_ids)} direct prerequisite(s) identified in the curriculum graph."
+    if learner_state:
+        mastery = learner_state.get("mastery_estimate")
+        evidence = f"{learner_name} is at {mastery:.0%} on {concept_phrase}. " if mastery is not None else f"{learner_name} has no recorded mastery estimate for {concept_phrase}. "
+        evidence += f"The learner has {learner_state.get('state_status', 'unknown')} evidence across {learner_state.get('evidence_count', 0)} assessment(s)."
 
     return OperationResult(
         operation="explain_learning_difficulty",
         status=OperationStatus.OK,
-        structured_data={"concept_id": concept_id, "prerequisite_ids": prereq_ids},
+        structured_data={"concept_id": concept_id, "prerequisite_ids": prereq_ids, "learner_state": learner_state, "student_id": request.student_id},
         evidence_summary=evidence,
         graph_finding=graph_finding,
         ncert_resource=ncert,
@@ -728,6 +783,10 @@ def op_recommend_curriculum_activity(intent: IntentResult, request: CopilotReque
     if target not in kg:
         ids = concept_ids(params.get("concept_phrase", ""), grade)
         target = ids[0] if len(ids) == 1 else None
+    if not target:
+        target, focused_title = _student_focus_concept(request, grade)
+        if target:
+            params["concept_phrase"] = focused_title or target
     if not target:
         return OperationResult(operation="recommend_curriculum_activity", status=OperationStatus.PARTIAL,
                                evidence_summary="Please specify the activity's concept or topic and grade.")

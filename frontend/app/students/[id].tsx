@@ -32,6 +32,7 @@ import {
   type StudentKnowledgeView, type ConceptWithState,
 } from "@/services/learnerStateService";
 import { colors, spacing } from "@/theme";
+import { StudentAiBar } from "@/components/StudentAiBar";
 
 // ─── Mastery helpers ──────────────────────────────────────────────────────────
 function masteryColor(m: number | null): string {
@@ -299,6 +300,24 @@ export default function StudentDetailsScreen() {
               </AppText>
             </View>
           </View>
+
+          <StudentAiBar
+            studentName={student.name}
+            grade={student.grade}
+            knowledge={kv ?? null}
+            onSubmit={(question, conceptId) => router.push({
+              pathname: "/chatbot",
+              params: {
+                grade: String(student.grade),
+                studentId: student.id,
+                studentName: student.name,
+                studentThread: "true",
+                conceptId,
+                screenContext: "student_copilot",
+                prompt: question,
+              },
+            })}
+          />
 
           {/* ── Summary stats ── */}
           {kv && (

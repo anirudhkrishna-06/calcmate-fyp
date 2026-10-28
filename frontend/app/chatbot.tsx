@@ -30,6 +30,7 @@ import type { GeneralSchedule } from "@/types/generalSchedule";
 import {
   listConversations,
   createConversation,
+  getOrCreateStudentConversation,
   selectConversation,
   restoreConversation,
   conversationMessages,
@@ -257,11 +258,15 @@ export default function ChatbotScreen({ embedded = false }: { embedded?: boolean
     grade?: string;
     prompt?: string;
     studentId?: string;
+    studentName?: string;
+    studentThread?: string;
     conceptId?: string;
     screenContext?: string;
   }>();
   const { grade, setGrade, error: gradeError } = useGrade(Number(params.grade));
   const prompts = gradePrompts[grade];
+  const studentMode = Boolean(params.studentId && params.studentThread === "true");
+  const studentName = params.studentName || "Student";
   const contextualDraft = useRef("");
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [history, setHistory] = useState<Conversation[]>([]);
@@ -307,7 +312,9 @@ export default function ChatbotScreen({ embedded = false }: { embedded?: boolean
   );
   useEffect(() => {
     mounted.current = true;
-    restoreConversation()
+    (studentMode && params.studentId
+      ? getOrCreateStudentConversation(params.studentId, studentName, Number(params.grade) || grade)
+      : restoreConversation())
       .then(async (c) => {
         if (!mounted.current) return;
         active.current = c.id;
@@ -329,7 +336,7 @@ export default function ChatbotScreen({ embedded = false }: { embedded?: boolean
       unsubscribe();
       keyboard.remove();
     };
-  }, [refresh, scrollToEnd]);
+  }, [refresh, scrollToEnd, studentMode, params.studentId, params.studentName, params.grade]);
   useEffect(() => {
     if (!loading && params.prompt && contextualDraft.current !== params.prompt) {
       contextualDraft.current = params.prompt;
@@ -360,7 +367,9 @@ export default function ChatbotScreen({ embedded = false }: { embedded?: boolean
   }
   async function newChat() {
     try {
-      await switchTo(await createConversation(grade));
+      await switchTo(studentMode && params.studentId
+        ? await getOrCreateStudentConversation(params.studentId, studentName, grade)
+        : await createConversation(grade));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not create chat.");
     }
@@ -839,6 +848,17 @@ function EmptyClassroomArtwork() {
           </View>
         ) : null}
 
+        {studentMode ? (
+          <View style={styles.studentModeBanner}>
+            <Mark size={22} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.studentModeTitle}>{studentName} — AI Copilot</Text>
+              <Text style={styles.studentModeSubtitle}>Grounded in this learner's live classroom evidence</Text>
+            </View>
+            <Ionicons name="person-circle-outline" size={22} color={P.gold} />
+          </View>
+        ) : null}
+
         {/* Notices */}
         {offline || !configured ? (
           <View style={styles.notice}>
@@ -1060,6 +1080,9 @@ const styles = StyleSheet.create({
   gradeSelected: { backgroundColor: P.forest, borderColor: P.forest },
   gradeText: { fontSize: 12, fontWeight: "600", color: P.body },
   gradeTextSelected: { color: "#F3E2AE" },
+  studentModeBanner: { flexDirection: "row", alignItems: "center", gap: 10, marginHorizontal: 16, marginTop: 10, padding: 11, borderRadius: 14, backgroundColor: P.sage, borderWidth: 1, borderColor: P.gold },
+  studentModeTitle: { color: P.ink, fontWeight: "800", fontSize: 13 },
+  studentModeSubtitle: { color: P.muted, fontSize: 11, marginTop: 2 },
 
   /* Notices */
   notice: {

@@ -43,6 +43,10 @@ def mentioned_students(text, students):
 
 
 def bind_student_context(request):
+    # A student Copilot thread is explicitly scoped by its conversation. Do
+    # not let a casual name in a follow-up silently switch the learner.
+    if request.student_id and request.screen_context == "student_copilot":
+        return
     found, ambiguous = mentioned_students(request.message, roster(request.workspace_id))
     if len(found) == 1 and not ambiguous:
         request.student_id = found[0]["id"]

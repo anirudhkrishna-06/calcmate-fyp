@@ -3,7 +3,7 @@ import { Grade } from "@/types/domain";
 import { prepareMessage,prepareRetry,completeMessage,failMessage } from "./chatRepository";
 import { requestRag } from "./ragClient";
 import { createGeneralSchedule } from "./generalScheduleService";
-export { listConversations,createConversation,selectConversation,restoreConversation,conversationMessages } from "./chatRepository";
+export { listConversations,createConversation,getOrCreateStudentConversation,selectConversation,restoreConversation,conversationMessages } from "./chatRepository";
 const sending=new Set<string>();
 async function deliver(message:ChatMessage, onResponse?:(r:RagResponse)=>Promise<void>) {
   if (sending.has(message.id)) throw new Error("This request is already being sent.");

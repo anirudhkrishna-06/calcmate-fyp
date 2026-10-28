@@ -1,8 +1,3 @@
-"""
-Build the FAISS vector store directly from NCERT chapter PDFs.
-... (docstring unchanged)
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -165,9 +160,6 @@ def _dedupe(chunks: Iterable[str]) -> list[str]:
     return out
 
 
-# --------------------------------------------------------------------------- #
-# Manifest handling
-# --------------------------------------------------------------------------- #
 
 @dataclass
 class ChapterRow:

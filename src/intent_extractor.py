@@ -411,6 +411,17 @@ def _classify_deterministic(text: str, request: CopilotRequest) -> IntentResult:
 
     missing: list[str] = []
 
+    # Student-thread prompts are intentionally resolved before broad activity
+    # and classroom patterns. The student_id is the authoritative scope; the
+    # teacher does not need to repeat the learner's name in follow-ups.
+    if request.student_id:
+        if _matches_any(text, _DIFFICULTY_PATTERNS) or re.search(r"\b(?:why|diagnos\w*|struggl\w*)\b", text, re.I):
+            return IntentResult(intent=CopilotIntent.EXPLAIN_LEARNING_DIFFICULTY, parameters=params)
+        if re.search(r"\b(?:next lesson|what should .*teach|what .*teach .*next|activity|drill|practice)\b", text, re.I):
+            return IntentResult(intent=CopilotIntent.RECOMMEND_CURRICULUM_ACTIVITY, parameters=params)
+        if re.search(r"\b(?:how is .*doing|how .*progress|full diagnosis|overall progress|progress report|foundational gaps|what .*assessed)\b", text, re.I):
+            return IntentResult(intent=CopilotIntent.GET_STUDENT_PROGRESS, parameters=params)
+
     # ── Schedule ──────────────────────────────────────────────────────────────
     if _matches_any(text, _SCHEDULE_PATTERNS):
         return IntentResult(

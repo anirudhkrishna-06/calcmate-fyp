@@ -25,6 +25,17 @@ export async function createConversation(grade=currentGrade()):Promise<Conversat
   await withTransaction(async tx => { await tx.runAsync("INSERT INTO conversations VALUES(?,?,?,?,?,?)",conversation.id,scope.workspaceId,conversation.title,grade,now,now); });
   await selectConversation(conversation.id); return conversation;
 }
+export async function getOrCreateStudentConversation(studentId:string, studentName:string, grade:number):Promise<Conversation> {
+  if (!studentId.trim() || !studentName.trim()) throw new Error("Student context is required for this Copilot thread.");
+  if (![1,2,3,4,5].includes(grade)) throw new Error("Choose a grade from 1 to 5.");
+  const scope=await chatScope();
+  const existing=await withTransaction(async tx => tx.getFirstAsync<Conversation>("SELECT * FROM conversations WHERE workspace_id=? AND student_id=? ORDER BY updated_at DESC LIMIT 1",scope.workspaceId,studentId));
+  if(existing){ await selectConversation(existing.id); return existing; }
+  const now=new Date().toISOString();
+  const conversation:Conversation={id:`student-${studentId}`,workspace_id:scope.workspaceId,title:`${studentName} — AI Copilot`,grade:grade as Conversation["grade"],student_id:studentId,created_at:now,updated_at:now};
+  await withTransaction(async tx => { await tx.runAsync("INSERT INTO conversations(id,workspace_id,title,grade,student_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",conversation.id,scope.workspaceId,conversation.title,grade,studentId,now,now); });
+  await selectConversation(conversation.id); return conversation;
+}
 export async function selectConversation(id:string) {
   const scope=await chatScope();
   await withTransaction(async tx => {

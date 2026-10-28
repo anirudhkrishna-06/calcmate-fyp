@@ -215,6 +215,11 @@ migrations.push(`CREATE TABLE IF NOT EXISTS notifications (
 );
 CREATE INDEX IF NOT EXISTS notifications_recent ON notifications(workspace_id,created_at);`);
 
+// Student Copilot threads are durable, workspace-scoped conversations. The
+// nullable column keeps all existing classroom conversations compatible.
+migrations.push(`ALTER TABLE conversations ADD COLUMN student_id TEXT;
+CREATE INDEX student_conversations ON conversations(workspace_id,student_id,updated_at);`);
+
 let opening: Promise<SQLite.SQLiteDatabase> | undefined;
 export function getDatabase() {
   opening ??= (async () => {

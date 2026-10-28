@@ -53,7 +53,7 @@ export type RagResponse = {
   schedule_action?: ScheduleAction | null;
   reschedule_action?: RescheduleAction | null;
 };
-export type Conversation = { id:string; workspace_id:string; title:string; grade:Grade; created_at:string; updated_at:string };
+export type Conversation = { id:string; workspace_id:string; title:string; grade:Grade; student_id?:string|null; created_at:string; updated_at:string };
 export type ChatMessage = {
   id:string; workspace_id:string; conversation_id:string; role:"teacher" | "assistant"; text:string;
   status:"pending" | "completed" | "failed"; error:string | null; request_json:string | null;
