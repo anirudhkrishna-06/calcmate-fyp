@@ -6,21 +6,22 @@
  * before they walk into the classroom.
  */
 import { useState, useCallback } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { Screen } from '@/components/Screen';
 import { AppText } from '@/components/AppText';
 import { Button } from '@/components/Button';
+import { ClassFlow, DetailPanel } from '@/components/ClassFlow';
 import { DateField } from '@/components/DateField';
 import { Choices } from '@/components/Choices';
 import { FormStatus } from '@/components/FormStatus';
 import { Section } from '@/components/Workspace';
 import { useLocalData } from '@/hooks/useLocalData';
-import { loadTeacher, loadStudents } from '@/services/storageService';
+import { loadTeacher } from '@/services/storageService';
 import { today, withTransaction, assertScope } from '@/services/database';
 import { requireSession } from '@/services/authService';
 import { createGeneralSchedule } from '@/services/generalScheduleService';
-import { colors, spacing } from '@/theme';
+import { colors } from '@/theme';
 import type { Grade } from '@/types/domain';
 import type { GeneralSelection } from '@/types/generalSchedule';
 
@@ -94,7 +95,6 @@ async function loadClassroomSnapshot(grades: number[], forDate: string): Promise
 
 // ─── Grade Snapshot Card ───────────────────────────────────────────────────────
 function GradeCard({ snap }: { snap: GradeSnapshot }) {
-  const attendance = snap.total > 0 ? Math.round((snap.presentToday / snap.total) * 100) : 0;
   const weakPct = snap.total > 0 ? Math.round((snap.weak / snap.total) * 100) : 0;
   const urgency = weakPct > 50 ? 'high' : weakPct > 25 ? 'medium' : 'low';
   const urgencyColor = urgency === 'high' ? colors.danger : urgency === 'medium' ? colors.attention : colors.forest;
@@ -115,22 +115,16 @@ function GradeCard({ snap }: { snap: GradeSnapshot }) {
 
         {/* Stats row */}
         <View style={styles.statsRow}>
-          <StatChip icon="Students" value={`${snap.presentToday}/${snap.total}`} label="Present" color={colors.forest} />
-          <StatChip icon="⚠️" value={`${snap.weak}`} label="Need Support" color={urgencyColor} />
+          <StatChip icon="" value={`${snap.presentToday}/${snap.total}`} label="Present" color={colors.forest} />
+          <StatChip icon="⚠️" value={`${snap.weak}`} label="support" color={urgencyColor} />
           {snap.prerequisiteGaps > 0 && (
-            <StatChip icon="Linked" value={`${snap.prerequisiteGaps}`} label="Gap Conflicts" color={colors.attention} />
+            <StatChip icon="" value={`${snap.prerequisiteGaps}`} label="gaps" color={colors.attention} />
           )}
         </View>
 
-        {/* Mastery bar */}
-        <View>
-          <View style={styles.bar}>
-            <View style={[styles.barFill, { width: `${100 - weakPct}%` as any, backgroundColor: urgencyColor }]} />
-          </View>
-          <AppText variant="small" style={{ color: colors.charcoalMuted, marginTop: 2 }}>
-            {100 - weakPct}% of class on track
-          </AppText>
-        </View>
+        <DetailPanel title="Learning details">
+          <AppText variant="small" muted>{snap.weak} of {snap.total} learners need support. {snap.prerequisiteGaps} prerequisite gaps.</AppText>
+        </DetailPanel>
       </View>
     </View>
   );
@@ -157,10 +151,11 @@ export default function NewGeneralSchedule() {
   const [error, setError] = useState('');
 
   // Classroom snapshot — reloads whenever grades or date changes
+  const gradeKey = grades.join(',');
   const snapshotLoader = useCallback(async () => {
-    if (!grades.length) return [];
-    return loadClassroomSnapshot(grades, date);
-  }, [grades.join(','), date]);
+    if (!gradeKey) return [];
+    return loadClassroomSnapshot(gradeKey.split(',').map(Number), date);
+  }, [gradeKey, date]);
 
   const { data: snapshot, loading: snapshotLoading } = useLocalData(snapshotLoader);
 
@@ -187,7 +182,7 @@ export default function NewGeneralSchedule() {
       topInset={false}
       footer={
         <Button
-          label={busy ? 'Creating schedule…' : 'Generate Period Schedule'}
+          label={busy ? 'Creating schedule…' : 'Generate schedule'}
           icon="play-circle-outline"
           disabled={busy || profileLoading || !!profileError || !grades.length}
           onPress={() => void generate()}
@@ -197,33 +192,26 @@ export default function NewGeneralSchedule() {
       {/* ── Hero ──────────────────────────────────────────────────── */}
       <View style={styles.hero}>
         <View style={styles.heroTextBlock}>
-          <AppText variant="title">Pre-Class Briefing</AppText>
+          <ClassFlow step={0} />
+          <AppText variant="title">Ready for class?</AppText>
           <AppText muted>
-            Knowledge snapshot before you walk in — the schedule will start from where your students are now.
+            Choose your grades. Plan the next 40 minutes.
           </AppText>
         </View>
-        {teacher && (
-          <View style={styles.teacherChip}>
-            <AppText style={{ fontSize: 13, fontWeight: '800', color: colors.forest }}>Teacher</AppText>
-            <View>
-              <AppText style={{ fontWeight: '700', fontSize: 13, color: colors.forest }}>{teacher.name}</AppText>
-              <AppText variant="small" style={{ color: colors.charcoalMuted }}>{teacher.schoolName}</AppText>
-            </View>
-          </View>
-        )}
+        {teacher && <AppText variant="small" muted>{teacher.name} · {teacher.schoolName}</AppText>}
       </View>
 
       <FormStatus message={error || profileError} error />
       {profileError ? <Button label="Retry" variant="quiet" onPress={() => void reloadProfile()} /> : null}
 
       {/* ── Date + Grades ─────────────────────────────────────────── */}
-      <Section title="Date & Grades">
-        <DateField label="Planning date" value={date} onChange={setDate} disabled={busy} />
+      <Section title="Your class">
+        <DateField label="Date" value={date} onChange={setDate} disabled={busy} />
         <Choices
           multiple
           values={[1, 2, 3, 4, 5].map(g => ({
             value: String(g),
-            label: `Grade ${g}`,
+            label: `G${g}`,
             disabled: busy || profileLoading,
           }))}
           selected={grades.map(String)}
@@ -237,19 +225,16 @@ export default function NewGeneralSchedule() {
       {/* ── Classroom Snapshot ────────────────────────────────────── */}
       {snapshot && snapshot.length > 0 && (
         <Section
-          title="Classroom Knowledge Snapshot"
-          detail={snapshotLoading ? 'Updating…' : `${totalPresent}/${totalStudents} present · ${totalWeak} need support${hasGaps ? ' · Prerequisite gaps detected' : ''}`}
+          title="At a glance"
+          detail={snapshotLoading ? 'Updating…' : `${totalPresent}/${totalStudents} marked present`}
         >
           {/* Summary banner */}
           {totalWeak > 0 && (
             <View style={[styles.alertBanner, { borderColor: totalWeak > totalStudents / 2 ? colors.danger : colors.attention }]}>
-              <AppText style={{ fontWeight: '700', color: totalWeak > totalStudents / 2 ? colors.danger : colors.attention }}>
-                {totalWeak > totalStudents / 2 ? 'High intervention needed' : 'Some students need support'}
+              <AppText style={{ fontWeight: '700', color: colors.danger }}>
+                {totalWeak} learners need support
               </AppText>
-              <AppText variant="small" style={{ color: colors.charcoal }}>
-                {totalWeak} of {totalStudents} students have concepts below mastery threshold.
-                {hasGaps ? ' Prerequisite gaps detected — AI will prioritise foundational concepts.' : ''}
-              </AppText>
+              {hasGaps && <AppText variant="small" muted>Foundations first: prerequisite gaps found.</AppText>}
             </View>
           )}
 
@@ -259,7 +244,7 @@ export default function NewGeneralSchedule() {
       )}
 
       {/* ── Priority ──────────────────────────────────────────────── */}
-      <Section title="Scheduling Priority">
+      <Section title="Time allocation">
         <Choices
           values={[
             { value: 'learning-needs', label: 'Learning Needs', disabled: busy },
@@ -270,21 +255,21 @@ export default function NewGeneralSchedule() {
         />
         <AppText variant="small" muted>
           {priority === 'learning-needs'
-            ? 'More time for revision, prerequisite gaps, and weak concepts.'
-            : 'Equal time for every grade in this period.'}
+            ? 'Extra time where support is needed.'
+            : 'Equal time for each grade.'}
         </AppText>
       </Section>
 
       {/* ── Quick link to Weekly Plan ─────────────────────────────── */}
       <Section title="Planning ahead?">
         <Button
-          label="Create Full Weekly Schedule"
+          label="Plan a week"
           icon="calendar-outline"
           variant="secondary"
           onPress={() => router.push('/weekly-schedule/new')}
         />
         <AppText variant="small" muted>
-          Generates Mon–Fri, 5 × 40-min periods with breaks — all from current knowledge states.
+          Mon–Fri · 5 periods a day · Breaks included.
         </AppText>
       </Section>
     </Screen>
@@ -311,7 +296,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
     backgroundColor: colors.surface,
-    borderRadius: 12,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.line,
     borderLeftWidth: 5,

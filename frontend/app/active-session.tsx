@@ -17,6 +17,7 @@ import { router, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { Screen } from "@/components/Screen";
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
+import { ClassFlow, DetailPanel } from "@/components/ClassFlow";
 import { FormStatus } from "@/components/FormStatus";
 import { LoadingState } from "@/components/LoadingState";
 import { useLocalData } from "@/hooks/useLocalData";
@@ -156,6 +157,7 @@ function CohortCard({ activity, isGuided, gradeNeed }: {
       {/* Activity */}
       <AppText style={{ fontSize: 13, color: colors.charcoal, marginLeft: 42 }}>{activity.activity}</AppText>
 
+      <DetailPanel title="Objective & curriculum">
       {/* Objective */}
       <AppText variant="small" muted style={{ marginLeft: 42, fontSize: 12 }}>
         Objective: {activity.objective}
@@ -177,6 +179,8 @@ function CohortCard({ activity, isGuided, gradeNeed }: {
           <AppText style={{ fontSize: 12, color: colors.forest, fontWeight: "600" }}>Knowledge Graph</AppText>
         </Pressable>
       )}
+      </DetailPanel>
+
     </View>
   );
 }
@@ -355,11 +359,11 @@ export default function ActiveSessionScreen() {
   }
 
   if (loading && !data) {
-    return <Screen topInset={false}><LoadingState label="Opening your active classroom" /></Screen>;
+    return <Screen topInset={true}><LoadingState label="Opening your active classroom" /></Screen>;
   }
   if (loadError || !data?.session) {
     return (
-      <Screen topInset={false}>
+      <Screen topInset={true}>
         <AppText variant="title">Active Class</AppText>
         <FormStatus message={loadError || "Session not found."} error />
         <Button label="Back to Schedules" onPress={() => router.replace("/(tabs)/schedule")} />
@@ -382,7 +386,7 @@ export default function ActiveSessionScreen() {
 
   return (
     <Screen
-      topInset={false}
+      topInset={true}
       footer={
         <View style={styles.footerRow}>
           <Button
@@ -391,7 +395,7 @@ export default function ActiveSessionScreen() {
             variant="secondary"
             disabled={loading || actionBusy || status === "completed"}
             onPress={() => void handlePauseResume()}
-            style={{ flex: 1 }}
+            style={{ flex: 1, paddingHorizontal: 6, flexDirection: "column", borderRadius: 18, gap: 4 }}
           />
           <Button
             label="Attendance"
@@ -399,19 +403,20 @@ export default function ActiveSessionScreen() {
             variant="quiet"
             disabled={loading || actionBusy || status === "completed"}
             onPress={() => setShowAttendanceModal(true)}
-            style={{ flex: 1 }}
+            style={{ flex: 1, paddingHorizontal: 6, flexDirection: "column", borderRadius: 18, gap: 4 }}
           />
           <Button
-            label={status === "completed" ? "Review" : "End & Review"}
+            label={status === "completed" ? "Review" : "Finish"}
             icon="checkmark-done-outline"
             disabled={loading || actionBusy}
             onPress={handleFinishClass}
-            style={{ flex: 1 }}
+            style={{ flex: 1, paddingHorizontal: 6, flexDirection: "column", borderRadius: 18, gap: 4 }}
           />
         </View>
       }
     >
       {/* ── Session Header ── */}
+      <ClassFlow step={1} />
       <View style={styles.sessionHeader}>
         <View style={{ flex: 1, gap: 4 }}>
           <AppText variant="title">In-Class</AppText>
@@ -450,10 +455,10 @@ export default function ActiveSessionScreen() {
           />
           <View style={{ alignItems: "center", flex: 1 }}>
             <AppText variant="subheading" style={{ fontSize: 15 }}>
-              Block {currentBlockIndex + 1} / {schedule.blocks.length}
+              Block {currentBlockIndex + 1} of {schedule.blocks.length}
             </AppText>
             <AppText variant="small" muted>
-              {currentBlock?.durationMinutes ?? 0} min planned · {formatTime(elapsedInBlock)} elapsed
+              {formatTime(elapsedInBlock)} / {currentBlock?.durationMinutes ?? 0} min
             </AppText>
             <BlockProgressBar progress={progress} overtime={blockOvertime} />
           </View>
@@ -478,10 +483,10 @@ export default function ActiveSessionScreen() {
       )}
 
       {/* ── Current block ── */}
-      <View style={styles.classSummaryCard}>
-        <View style={styles.summaryHeader}><AppText variant="subheading">Class Summary</AppText><AppText variant="small" muted>{data.students.length} learners in this rotation</AppText></View>
-        <View style={styles.summaryStats}><View><AppText style={styles.summaryValue}>{currentBlock?.teacherGrade ? `G${currentBlock.teacherGrade}` : 'All'}</AppText><AppText variant="small" muted>teacher focus</AppText></View><View><AppText style={styles.summaryValue}>{currentNeed?.weak ?? 0}</AppText><AppText variant="small" muted>need attention</AppText></View><View><AppText style={styles.summaryValue}>{data.events.length}</AppText><AppText variant="small" muted>attendance events</AppText></View></View>
-        <AppText variant="small" muted>{currentNeed?.concept ? `${currentNeed.concept} is the current learning focus. Other groups are continuing their independent activity.` : 'Keep the teacher focus visible and check the independent groups before moving on.'}</AppText>
+      <View style={styles.quickStats}>
+        <AppText variant="small" muted>{data.students.length} learners</AppText>
+        <AppText variant="small" style={{ color: colors.forest, fontWeight: '700' }}>{currentNeed?.weak ?? 0} need support</AppText>
+        <AppText variant="small" muted>{data.events.length} attendance events</AppText>
       </View>
 
       {currentBlock && (
@@ -507,12 +512,12 @@ export default function ActiveSessionScreen() {
             <AppText style={{ fontWeight: "700", fontSize: 15, color: colors.forest, marginTop: 6 }}>
               {currentBlock.teacherActivity}
             </AppText>
-            <AppText variant="small" muted style={{ marginTop: 2 }}>{currentBlock.reason}</AppText>
+            <DetailPanel key={currentBlock.id} title="Why this focus?"><AppText variant="small" muted>{currentBlock.reason}</AppText></DetailPanel>
           </View>
 
           {/* Grade cohort cards */}
           <View style={{ gap: 8 }}>
-            <AppText variant="subheading" style={{ fontSize: 14 }}>Grade Cohorts</AppText>
+            <AppText variant="subheading" style={{ fontSize: 14 }}>Group activities</AppText>
             {currentBlock.activities.map(a => (
               <CohortCard
                 key={a.grade}
@@ -527,7 +532,7 @@ export default function ActiveSessionScreen() {
 
       {/* ── AI Copilot ── */}
       <Button
-        label="Ask AI Copilot about this class"
+        label="Ask Copilot"
         icon="chatbubble-ellipses-outline"
         variant="quiet"
         onPress={() =>
@@ -608,6 +613,7 @@ export default function ActiveSessionScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
+  quickStats: { flexDirection: "row", flexWrap: "wrap", gap: 12, backgroundColor: colors.sageLight, borderRadius: 14, padding: 12 },
   classSummaryCard: { gap: 10, padding: 14, borderRadius: 14, backgroundColor: colors.paperWarm, borderWidth: 1, borderColor: colors.lineLight },
   summaryHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
   summaryStats: { flexDirection: "row", justifyContent: "space-between" },

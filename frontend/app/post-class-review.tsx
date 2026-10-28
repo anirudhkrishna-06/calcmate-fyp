@@ -19,6 +19,8 @@ import { router, useLocalSearchParams } from "expo-router";
 import { Screen } from "@/components/Screen";
 import { AppText } from "@/components/AppText";
 import { Button } from "@/components/Button";
+import { ClassFlow } from "@/components/ClassFlow";
+import { Ionicons } from "@expo/vector-icons";
 import { TextField } from "@/components/TextField";
 import { FormStatus } from "@/components/FormStatus";
 import { LoadingState } from "@/components/LoadingState";
@@ -70,18 +72,18 @@ function BlockCard({
       ]}
     >
       {/* Header row */}
-      <Pressable onPress={() => setExpanded(e => !e)} accessibilityRole="button" style={blockStyles.cardHeader}>
+      <Pressable onPress={() => setExpanded(e => !e)} accessibilityRole="button" accessibilityLabel={`Block ${index + 1}, ${delivered ? "delivered" : "postponed"}. ${expanded ? "Hide" : "Show"} details`} accessibilityState={{ expanded }} style={blockStyles.cardHeader}>
         {/* Status pill */}
         <View style={[blockStyles.statusPill, { backgroundColor: delivered ? colors.sageLight : "#FFF3CD" }]}>
           <AppText style={{ fontSize: 12, fontWeight: "800", color: delivered ? colors.forest : colors.attention }}>
-            {delivered ? "✓ Delivered" : "⏭ Postponed"}
+            {delivered ? "✓ Done" : "Later"}
           </AppText>
         </View>
 
         <View style={{ flex: 1 }}>
           <AppText style={{ fontWeight: "700", fontSize: 14, color: colors.text }}>
             Block {index + 1}
-            {block.teacherGrade ? ` · Teacher → Grade ${block.teacherGrade}` : block.kind === "transition" ? " · Transition" : ""}
+            {block.teacherGrade ? ` · G${block.teacherGrade}` : block.kind === "transition" ? " · Transition" : ""}
             {` (${block.durationMinutes} min)`}
           </AppText>
           <AppText variant="small" muted numberOfLines={expanded ? undefined : 1}>
@@ -289,7 +291,7 @@ export default function PostClassReviewScreen() {
     const deliveredCount = Object.values(deliveryMap).filter(Boolean).length;
     const total = data?.schedule?.blocks.length ?? 0;
     return (
-      <Screen topInset={false}>
+      <Screen topInset={true}>
         <View style={styles.successCard}>
           <AppText style={{ fontSize: 20, fontWeight: '800', color: colors.forest }}>Class complete</AppText>
           <AppText variant="title" style={{ textAlign: "center" }}>Session Complete</AppText>
@@ -323,11 +325,11 @@ export default function PostClassReviewScreen() {
   }
 
   if (loading && !data) {
-    return <Screen topInset={false}><LoadingState label="Opening the post-class record" /></Screen>;
+    return <Screen topInset={true}><LoadingState label="Opening the post-class record" /></Screen>;
   }
   if (loadError || !data?.session) {
     return (
-      <Screen topInset={false}>
+      <Screen topInset={true}>
         <AppText variant="title">Post-Class Review</AppText>
         <FormStatus message={loadError || "Session not found."} error />
         <Button label="Back to Schedules" onPress={() => router.replace("/(tabs)/schedule")} />
@@ -342,10 +344,10 @@ export default function PostClassReviewScreen() {
 
   return (
     <Screen
-      topInset={false}
+      topInset={true}
       footer={
         <Button
-          label={saving ? "Saving…" : "Save & Conclude Session"}
+          label={saving ? "Saving…" : "Save review"}
           icon="checkmark-done-outline"
           disabled={saving}
           onPress={() => void handleSave()}
@@ -353,23 +355,24 @@ export default function PostClassReviewScreen() {
       }
     >
       {/* ── Header ── */}
+      <ClassFlow step={2} />
       <View style={styles.pageHeader}>
         <AppText variant="title">Post-Class Review</AppText>
-        <AppText muted>Record what happened and update student learning estimates.</AppText>
+        <AppText muted>A quick check-in before your next class.</AppText>
       </View>
 
       <FormStatus message={saveError} error />
 
       {/* ── Session summary chips ── */}
       <View style={styles.summaryRow}>
-        <SummaryChip icon="⏱" value={`${elapsedMins} min`} label="Duration" />
-        <SummaryChip icon="Delivered" value={`${deliveredCount}/${blocksTotal}`} label="Delivered" />
-        <SummaryChip icon="Events" value={String(eventsCount)} label="Mid-session" />
-        <SummaryChip icon="Students" value={String(focusedStudents.length)} label="Noted" />
+        <SummaryChip icon="time-outline" value={`${elapsedMins} min`} label="Duration" />
+        <SummaryChip icon="checkmark-done-outline" value={`${deliveredCount}/${blocksTotal}`} label="Delivered" />
+        <SummaryChip icon="swap-horizontal-outline" value={String(eventsCount)} label="Events" />
+        <SummaryChip icon="people-outline" value={String(focusedStudents.length)} label="Noted" />
       </View>
 
       {/* ── Section 1: Block delivery ── */}
-      <Section title="Rotation Block Delivery" detail="Tap a block to expand, toggle delivery and add notes">
+      <Section title="Lesson delivery" detail="Tap to review or add notes">
         {data.schedule?.blocks.map((block, idx) => (
           <BlockCard
             key={block.id}
@@ -386,7 +389,7 @@ export default function PostClassReviewScreen() {
       {/* ── Section 2: Student interventions ── */}
       <Section
         title="Attention Follow-up"
-        detail="For each flagged area, say whether the class resolved it or it should remain in the next plan."
+        detail="Resolved today, or continue next class?"
       >
         {data.schedule?.needs?.filter(need => need.conceptId).map(need => {
           const block = data.schedule?.blocks.find(candidate => candidate.activities.some(activity => activity.grade === need.grade && activity.conceptId === need.conceptId));
@@ -403,7 +406,7 @@ export default function PostClassReviewScreen() {
 
       <Section
         title="Student Interventions"
-        detail="Select students who received focused teacher attention"
+        detail="Who received extra support?"
       >
         <View style={styles.studentGrid}>
           {data.students.map(s => {
@@ -430,7 +433,7 @@ export default function PostClassReviewScreen() {
 
       {/* ── Section 3: Exit assessments ── */}
       {data.schedule && focusedStudents.length > 0 && (
-        <Section title="Exit Assessments" detail="Optional: enter marks to update BKT learning estimates">
+        <Section title="Exit Assessments" detail="Optional · Update learning estimates">
           <TextField
             label="Maximum marks"
             value={exitMaximum}
@@ -496,7 +499,7 @@ export default function PostClassReviewScreen() {
       {/* ── Section 4: Observation ── */}
       <Section
         title="Classroom Observation"
-        detail="Saved as a teacher note against all selected students"
+        detail="A note for selected students"
       >
         <TextField
           label="Learning observation"
@@ -511,10 +514,10 @@ export default function PostClassReviewScreen() {
 }
 
 // ─── Helper component ─────────────────────────────────────────────────────────
-function SummaryChip({ icon, value, label }: { icon: string; value: string; label: string }) {
+function SummaryChip({ icon, value, label }: { icon: keyof typeof Ionicons.glyphMap; value: string; label: string }) {
   return (
     <View style={styles.summaryChip}>
-      <AppText style={{ fontSize: 18 }}>{icon}</AppText>
+      <Ionicons name={icon} size={20} color={colors.forest} />
       <AppText style={{ fontWeight: "800", fontSize: 16, color: colors.forest }}>{value}</AppText>
       <AppText variant="small" style={{ color: colors.charcoalMuted, fontSize: 11 }}>{label}</AppText>
     </View>
@@ -530,13 +533,14 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
   },
   summaryChip: {
-    flex: 1,
-    minWidth: 72,
+    flexGrow: 1,
+    flexBasis: "45%",
+    minWidth: 120,
     backgroundColor: colors.surface,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: colors.line,
-    padding: 10,
+    padding: 12,
     alignItems: "center",
     gap: 3,
   },
@@ -569,7 +573,7 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 8,
   },
-  attentionReview: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: colors.lineLight },
+  attentionReview: { flexDirection: "column", alignItems: "stretch", gap: 10, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: colors.lineLight },
   attentionTitle: { fontWeight: "800", color: colors.charcoal },
   reviewChoices: { flexDirection: "row", gap: 5 },
   reviewChoice: { paddingHorizontal: 8, paddingVertical: 7, borderRadius: 9, backgroundColor: colors.paperWarm, borderWidth: 1, borderColor: colors.lineLight },

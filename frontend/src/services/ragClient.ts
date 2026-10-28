@@ -57,7 +57,7 @@ export function validateRagResponse(value:unknown):RagResponse {
   };
 }
 
-export async function requestRag(request:ChatRequest, timeoutMs=90000):Promise<RagResponse> {
+export async function requestRag(request:ChatRequest, timeoutMs=240000):Promise<RagResponse> {
   const network=await NetInfo.fetch();
   if (network.isConnected === false) throw new Error("Offline. No on-device AI engine is installed. Your question is saved; retry when the API is reachable.");
   const base=apiBaseUrl();

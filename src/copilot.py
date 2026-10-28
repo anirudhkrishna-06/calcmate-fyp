@@ -264,7 +264,8 @@ def call_llm(
         )
 
     options = {"temperature": TEMPERATURE, "num_predict": MAX_TOKENS}
-    client = ollama.Client(timeout=float(os.getenv("CALCMATE_GENERATION_TIMEOUT", "65")))
+    # CPU inference for the 8B model can exceed a minute on a cold prompt.
+    client = ollama.Client(timeout=float(os.getenv("CALCMATE_GENERATION_TIMEOUT", "180")))
 
     try:
         if stream:
