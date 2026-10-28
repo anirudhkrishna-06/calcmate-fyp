@@ -15,7 +15,7 @@ Usage:
     python demo.py
     python demo.py --grade 4
     python demo.py --no-llm                 # retrieval only
-    python demo.py --model llama3.2:3b
+    python demo.py --model calcmate:latest
 
 Commands:
     help                    show commands

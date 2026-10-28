@@ -16,7 +16,7 @@ General schedules use their own `general-schedule` record type in the existing w
 ```powershell
 cd D:\FYP\calcmate-fyp
 $env:CALCMATE_ALLOW_INSECURE_AUTH='true'
-$env:CALCMATE_RAG_MODEL='llama3.2:3b'
+$env:CALCMATE_RAG_MODEL='calcmate:latest'
 .\venv\Scripts\python.exe -m src.api --host 0.0.0.0 --port 8000
 ```
 

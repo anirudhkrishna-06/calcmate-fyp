@@ -1,6 +1,6 @@
 import { readClassroomEvidence } from "./classroomEvidenceService";
 import NetInfo from "@react-native-community/netinfo";
-import { ChatRequest, RagChunk, RagResponse } from "@/types/chat";
+import { ChatRequest, RagChunk, RagResponse, RescheduleAction, RescheduleTask, RescheduledSlot } from "@/types/chat";
 import { apiBaseUrl } from "./apiClient";
 import { getSession,subscribeSession } from "./authService";
 export { apiBaseUrl } from "./apiClient";
@@ -15,6 +15,7 @@ export function validateRagResponse(value:unknown):RagResponse {
   }
   // Stage 4: Extract schedule_action from structured_data when backend signals invoke_local_scheduler.
   let schedule_action: RagResponse["schedule_action"] = null;
+  let reschedule_action: RagResponse["reschedule_action"] = null;
   const sd = response.structured_data;
   if (sd && sd["action"] === "invoke_local_scheduler") {
     const grades = Array.isArray(sd["suggested_grades"]) ? (sd["suggested_grades"] as number[]).filter(g => Number.isInteger(g) && g >= 1 && g <= 5) : [];
@@ -23,6 +24,20 @@ export function validateRagResponse(value:unknown):RagResponse {
     const dt = typeof sd["date"] === "string" ? sd["date"] : new Date().toISOString().slice(0, 10);
     if (grades.length > 0) {
       schedule_action = { action: "invoke_local_scheduler", suggested_grades: grades, available_minutes: mins, priority: pri, date: dt };
+    }
+  }
+  if (sd && sd["action"] === "reschedule_plan" && typeof sd["leave_date"] === "string" && typeof sd["rescheduled_date"] === "string") {
+    const tasks = Array.isArray(sd["leave_day_tasks"]) ? sd["leave_day_tasks"] : [];
+    const slots = Array.isArray(sd["rescheduled_slots"]) ? sd["rescheduled_slots"] : [];
+    const grades = Array.isArray(sd["grades"]) ? sd["grades"].filter(g => Number.isInteger(g) && g >= 1 && g <= 5) : [];
+    if (grades.length && tasks.every(t => t && typeof t === "object") && slots.every(s => s && typeof s === "object")) {
+      reschedule_action = {
+        action: "reschedule_plan", leave_date: sd["leave_date"], rescheduled_date: sd["rescheduled_date"],
+        leave_mode: "independent_peer_practice", grades,
+        zero_direct_instruction: sd["zero_direct_instruction"] === true,
+        leave_day_tasks: tasks as RescheduleTask[],
+        rescheduled_slots: slots as RescheduledSlot[],
+      };
     }
   }
   // Accept all optional Stage 3 copilot fields without strict validation.
@@ -38,6 +53,7 @@ export function validateRagResponse(value:unknown):RagResponse {
     ncert_resource: response.ncert_resource ?? null,
     limitations: Array.isArray(response.limitations) ? response.limitations : [],
     schedule_action,
+    reschedule_action,
   };
 }
 

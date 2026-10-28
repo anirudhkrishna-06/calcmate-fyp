@@ -29,7 +29,7 @@ flowchart TD
         KG["Knowledge Graph Engine<br/>(src/knowledge_graph.py)"]
         RAG["Curriculum RAG Engine<br/>(src/retrieve.py + FAISS)"]
         NCERT[("NCERT Textbook Corpus<br/>569 Chunks (Grades 3–5)")]
-        LocalOllama["Local LLM (Ollama llama3.2:3b)<br/>Optional Enrichment"]
+        LocalOllama["Local LLM (Ollama calcmate:latest from ModelFile)<br/>Optional Enrichment"]
         
         API --> Copilot
         Copilot --> KG
@@ -97,7 +97,7 @@ flowchart TD
   - `op_general_question` (general textbook question handling with retrieval fallback)
 - **Response Composers** (`src/response_composer.py`):
   - `compose_deterministic`: Assembles structured facts, findings, and textbook excerpts without LLM dependencies.
-  - `compose_with_llm`: Rephrases structured findings using local Ollama (`llama3.2:3b`) while strictly preventing hallucination of factual numbers or names.
+  - `compose_with_llm`: Rephrases structured findings using local Ollama (`calcmate:latest` from `ModelFile`) while strictly preventing hallucination of factual numbers or names.
 
 ### Layer 5: Canonical Knowledge Graph
 - **Graph Structure**: 84 concepts across Grades 1–5, 73 verified prerequisite edges.

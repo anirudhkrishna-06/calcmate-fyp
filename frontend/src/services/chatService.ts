@@ -10,7 +10,12 @@ async function deliver(message:ChatMessage, onResponse?:(r:RagResponse)=>Promise
   sending.add(message.id);
   try {
     const response=await requestRag(JSON.parse(message.request_json!));
-    let metadata: Record<string, unknown> | undefined = undefined;
+    let metadata: Record<string, unknown> = {
+      intent: response.intent,
+      mode: response.mode,
+      recommended_next_step: response.recommended_next_step,
+      graph_finding: response.graph_finding,
+    };
     if (response.schedule_action && response.schedule_action.action === "invoke_local_scheduler") {
       try {
         const sa = response.schedule_action;
@@ -20,10 +25,13 @@ async function deliver(message:ChatMessage, onResponse?:(r:RagResponse)=>Promise
           grades: sa.suggested_grades as Grade[],
           priority: sa.priority,
         });
-        metadata = { schedule };
+        metadata.schedule = schedule;
       } catch (schedErr) {
-        metadata = { schedule_error: schedErr instanceof Error ? schedErr.message : "Schedule generation failed" };
+        metadata.schedule_error = schedErr instanceof Error ? schedErr.message : "Schedule generation failed";
       }
+    }
+    if (response.reschedule_action?.action === "reschedule_plan") {
+      metadata.reschedule = response.reschedule_action;
     }
     if (onResponse) { try { await onResponse(response); } catch { /* best-effort */ } }
     await completeMessage(message,response,metadata);

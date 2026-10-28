@@ -18,7 +18,7 @@ RAG also needs `data/vector_store.index`, `data/vector_store_meta.json` and the 
 
 ```powershell
 .\venv\Scripts\python.exe -m pip install ollama
-ollama pull llama3.2:3b
+ollama create calcmate -f ModelFile
 ollama list
 # Only if the desktop application is not already serving Ollama:
 ollama serve

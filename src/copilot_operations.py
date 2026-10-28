@@ -518,17 +518,33 @@ def op_classroom_learning_summary(intent: IntentResult, request: CopilotRequest)
             # Older classroom databases may not yet contain attendance.
             attendance = []
 
+        # Check if the teacher specifically asked about pending / remaining concepts
+        msg_lower = request.message.lower()
+        is_pending_query = any(k in msg_lower for k in ("pending", "left to cover", "left to teach", "not covered", "remaining", "unassessed", "left"))
+
         total_students = summaries[0]["total_students"] if summaries else 0
         needs_support_concepts = [
             s["concept_title"] for s in summaries
             if s.get("counts", {}).get("needs_support", 0) > 0
         ]
 
-        evidence = (
-            f"Grade {grade} classroom summary: {total_students} student(s), "
-            f"{len(concepts)} concept(s) in scope. "
-            f"{len(needs_support_concepts)} concept(s) have students needing support."
-        )
+        if is_pending_query:
+            # Build dedicated pending concept roadmap
+            unassessed = [c["title"] for c in concepts if not any(s.get("concept_title") == c["title"] and s.get("total_assessed", 0) > 0 for s in summaries)]
+            evidence = (
+                f"Grade {grade} Pending Curriculum Roadmap ({len(concepts)} total concepts in scope):\n\n"
+                f"📋 **Unassessed / Pending Initial Instruction ({len(unassessed)})**: "
+                f"{', '.join(unassessed[:5])}{' and others' if len(unassessed) > 5 else ''}.\n"
+                f"⚠️ **Pending Remediation ({len(needs_support_concepts)})**: "
+                f"{', '.join(needs_support_concepts[:4]) if needs_support_concepts else 'None! All assessed concepts are on track.'}.\n"
+                f"✨ **Mastered / On Track**: {sum(1 for s in summaries if s.get('counts', {}).get('likely_ready', 0) > 0)} concept(s)."
+            )
+        else:
+            evidence = (
+                f"Grade {grade} classroom summary: {total_students} student(s), "
+                f"{len(concepts)} concept(s) in scope. "
+                f"{len(needs_support_concepts)} concept(s) have students needing support."
+            )
         if attention_candidates:
             supported = [item for item in attention_candidates if item["evidence_status"] == "supported"]
             unknown = [item for item in attention_candidates if item["evidence_status"] == "unknown"]
@@ -667,6 +683,24 @@ def _practice_steps(title):
                 ["Work through 144 / 12 using place value and the divide, multiply, subtract and bring-down steps.",
                  "Check that 12 x 12 = 144; have partners explain each step.",
                  "Try 168 / 12 independently and check the quotient by multiplication."])
+    if "place value" in lower or "tens and ones" in lower or "bundle" in lower:
+        return [
+            "Use bundles of 10 matchsticks or straws tied with rubber bands, plus loose sticks for ones.",
+            "Demonstrate a number like 24: hold up 2 bundles (2 tens = 20) and 4 loose sticks (4 ones). Write 24 = 2 tens + 4 ones.",
+            "Ask learner pairs to build given numbers using their bundles and explain their grouping to the class."
+        ]
+    if "regrouping" in lower or "carrying" in lower or "borrowing" in lower:
+        return [
+            "Set up two-column place value charts labeled 'Tens' and 'Ones' with counters or stick bundles.",
+            "Model the ones column first: when 10 or more ones accumulate, bundle 10 ones into 1 ten and carry it over to the tens column.",
+            "Have students work in pairs to verify why 10 ones must become 1 ten, verbalizing the trade aloud."
+        ]
+    if "zero" in lower:
+        return [
+            "Start with 4 pebbles in a small bowl. Count them together as you remove them one by one.",
+            "When the bowl is empty, ask: 'How many pebbles are left?' Introduce 0 as the mathematical count when nothing remains.",
+            "Draw empty boxes on the board and have children write '0', reinforcing that zero represents an empty count."
+        ]
     if "shape" in lower:
         return ["Trace familiar objects to draw a triangle, square and rectangle.",
                 "Count and mark their straight sides and corners. Compare them with a circle, which has no corners.",
@@ -829,10 +863,14 @@ def op_generate_instructional_schedule(intent: IntentResult, request: CopilotReq
     import datetime
     suggested_date = params.get("date", datetime.date.today().isoformat())
 
+    focus_g = suggested_grades[0] if suggested_grades else request.grade
     evidence = (
-        f"Schedule request for Grade(s) {', '.join(str(g) for g in suggested_grades)}, "
-        f"{available_minutes} minutes, priority={priority}. "
-        "The on-device scheduler will compute the rotation using live learner states."
+        f"Schedule request — 📅 **Multi-Grade Instructional Schedule Ahead** (Grade(s) {', '.join(str(g) for g in suggested_grades)}, "
+        f"{available_minutes} min, priority: {priority}):\n\n"
+        f"• **Opening Warm-Up (5m)**: Whole-class number sense talk to engage all cohorts.\n"
+        f"• **Rotation Block 1 ({max(12, (available_minutes - 10) // 2)}m)**: Direct Teacher Attention on Grade {focus_g} priority learning gaps; concurrent grades work on peer practice and independent consolidation.\n"
+        f"• **Rotation Block 2 ({max(12, (available_minutes - 10) // 2)}m)**: Teacher rotates attention to concurrent cohort while Grade {focus_g} shifts to guided worksheets.\n"
+        f"• **Closing Reflection (5m)**: Multi-grade exit tickets and formative checks."
     )
 
     return OperationResult(
@@ -851,6 +889,88 @@ def op_generate_instructional_schedule(intent: IntentResult, request: CopilotReq
             "available_minutes": available_minutes,
             "priority": priority,
             "date": suggested_date,
+        },
+    )
+
+
+def op_reschedule_instructional_plan(intent: IntentResult, request: CopilotRequest) -> OperationResult:
+    """Build a leave-day safety plan from the request classroom snapshot."""
+    import datetime as dt
+    import sqlite3
+
+    params = intent.parameters
+    leave_date = str(params.get("leave_date") or dt.date.today().isoformat())
+    try:
+        leave = dt.date.fromisoformat(leave_date)
+    except ValueError:
+        leave = dt.date.today()
+        leave_date = leave.isoformat()
+    target = str(params.get("rescheduled_date") or (leave + dt.timedelta(days=1)).isoformat())
+    grades = sorted({int(g) for g in params.get("grades", [request.grade]) if 1 <= int(g) <= 5})
+    db_path = _find_db()
+    leave_tasks: list[dict] = []
+    urgent_slots: list[dict] = []
+    if db_path:
+        try:
+            from src.classroom_contracts import snapshot_connection
+            snapshot = snapshot_connection.get()
+            conn = snapshot or sqlite3.connect(db_path)
+            try:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    """SELECT s.concept_id, s.mastery_estimate, s.state_status,
+                              c.title, c.grade
+                       FROM learner_concept_states s
+                       LEFT JOIN concepts c ON c.id=s.concept_id
+                       WHERE s.workspace_id=? AND c.grade IN ({})
+                       ORDER BY c.grade, s.mastery_estimate DESC NULLS LAST, s.concept_id""".format(",".join("?" * len(grades))),
+                    (request.workspace_id or "", *grades),
+                ).fetchall()
+            finally:
+                if snapshot is None:
+                    conn.close()
+            seen_ready: set[tuple[int, str]] = set()
+            seen_urgent: set[tuple[int, str]] = set()
+            for row in rows:
+                grade = int(row["grade"])
+                concept = row["title"] or row["concept_id"]
+                mastery = row["mastery_estimate"]
+                if mastery is not None and float(mastery) >= 0.80 and (grade, row["concept_id"]) not in seen_ready:
+                    leave_tasks.append({"grade": grade, "concept_id": row["concept_id"], "concept": concept,
+                                        "mastery": round(float(mastery), 3),
+                                        "activity": "Peer review and consolidation worksheet"})
+                    seen_ready.add((grade, row["concept_id"]))
+                elif (mastery is None or float(mastery) < 0.80) and (grade, row["concept_id"]) not in seen_urgent:
+                    urgent_slots.append({"grade": grade, "concept_id": row["concept_id"], "concept": concept,
+                                         "priority": "prerequisite-support", "duration_minutes": 15,
+                                         "reason": "Teacher-led attention moved from the leave day"})
+                    seen_urgent.add((grade, row["concept_id"]))
+        except (sqlite3.Error, TypeError, ValueError):
+            pass
+    if not leave_tasks:
+        leave_tasks = [{"grade": grade, "concept_id": None, "concept": "Previously mastered concepts",
+                        "activity": "Peer review and consolidation worksheet"} for grade in grades]
+    # Keep the proposal bounded and readable while preserving every grade represented.
+    urgent_slots = urgent_slots[: max(1, len(grades) * 2)]
+    if not urgent_slots:
+        urgent_slots = [{"grade": grade, "concept_id": None, "concept": "Priority learning gaps",
+                         "priority": "prerequisite-support", "duration_minutes": 15,
+                         "reason": "Teacher-led attention moved from the leave day"} for grade in grades]
+    evidence = (
+        f"Schedule request — leave day {leave_date}: no direct teacher instruction. "
+        f"Each affected grade receives independent consolidation using previously mastered concepts. "
+        f"Priority teacher time is queued for {target}."
+    )
+    return OperationResult(
+        operation="reschedule_instructional_plan",
+        status=OperationStatus.OK,
+        evidence_summary=evidence,
+        recommended_next_step="Review the proposal and apply it to the local timetable when ready.",
+        structured_data={
+            "action": "reschedule_plan", "leave_date": leave_date, "rescheduled_date": target,
+            "leave_mode": "independent_peer_practice", "grades": grades,
+            "zero_direct_instruction": True, "leave_day_tasks": leave_tasks,
+            "rescheduled_slots": urgent_slots,
         },
     )
 
@@ -908,6 +1028,7 @@ _DISPATCH = {
     CopilotIntent.RETRIEVE_NCERT_RESOURCE:        op_retrieve_ncert_resource,
     CopilotIntent.EXPLAIN_CONCEPT:                op_explain_concept,
     CopilotIntent.GENERATE_INSTRUCTIONAL_SCHEDULE: op_generate_instructional_schedule,
+    CopilotIntent.RESCHEDULE_INSTRUCTIONAL_PLAN: op_reschedule_instructional_plan,
     CopilotIntent.GENERAL_QUESTION:               op_general_question,
     CopilotIntent.UNSUPPORTED:                    op_unsupported,
     CopilotIntent.AMBIGUOUS:                      op_unsupported,
@@ -916,13 +1037,23 @@ _DISPATCH = {
 
 def dispatch(intent_result: IntentResult, request: CopilotRequest) -> OperationResult:
     """Route an IntentResult to the correct operation function."""
-    if intent_result.parameters.get("record_query"):
-        from src.classroom_queries import execute_record_query
-        return execute_record_query(intent_result, request)
-    fn = _DISPATCH.get(intent_result.intent)
-    if fn is None:
-        print(f"[CALCMATE_TRACE] dispatch_missing intent={intent_result.intent.value!r}", flush=True)
-        return op_unsupported(intent_result, request)
-    print(f"[CALCMATE_TRACE] dispatch operation={fn.__name__!r}", flush=True)
-    return fn(intent_result, request)
+    try:
+        if intent_result.parameters.get("record_query"):
+            from src.classroom_queries import execute_record_query
+            return execute_record_query(intent_result, request)
+        fn = _DISPATCH.get(intent_result.intent)
+        if fn is None:
+            print(f"[CALCMATE_TRACE] dispatch_missing intent={intent_result.intent.value!r}", flush=True)
+            return op_unsupported(intent_result, request)
+        print(f"[CALCMATE_TRACE] dispatch operation={fn.__name__!r}", flush=True)
+        return fn(intent_result, request)
+    except Exception as exc:
+        import logging
+        logging.getLogger("calcmate.copilot").exception("Copilot operation failed")
+        return OperationResult(
+            operation=intent_result.intent.value,
+            status=OperationStatus.ERROR,
+            error_detail=str(exc),
+            limitations=["The classroom snapshot could not be read for this request."],
+        )
 

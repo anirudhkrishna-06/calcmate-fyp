@@ -20,7 +20,7 @@ Write-Host 'Admin password: admin123 (unless CALCMATE_ADMIN_PASSWORD is already 
 Write-Host 'Phone: same Wi-Fi > scan Expo QR > Server connection > save the phone server address above.'
 if($CheckOnly){Write-Host 'Setup validated; no processes started.';exit 0}
 $env:CALCMATE_ALLOW_INSECURE_AUTH='true'
-if(!$env:CALCMATE_RAG_MODEL){$env:CALCMATE_RAG_MODEL='llama3.2:3b'}
+if(!$env:CALCMATE_RAG_MODEL){$env:CALCMATE_RAG_MODEL='calcmate:latest'}
 $env:EXPO_PUBLIC_API_BASE_URL="http://${LanIp}:${ApiPort}"
 $apiLog=Join-Path $repoRoot 'data\presentation-api.log'
 $apiErrorLog=Join-Path $repoRoot 'data\presentation-api-error.log'

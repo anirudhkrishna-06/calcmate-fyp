@@ -39,6 +39,7 @@ _INTENT_PREFIXES = {
     CopilotIntent.RECOMMEND_CURRICULUM_ACTIVITY:  "Teaching activity",
     CopilotIntent.RETRIEVE_NCERT_RESOURCE:        "NCERT resource",
     CopilotIntent.GENERATE_INSTRUCTIONAL_SCHEDULE:"Instructional schedule",
+    CopilotIntent.RESCHEDULE_INSTRUCTIONAL_PLAN:"Instructional reschedule",
     CopilotIntent.GENERAL_QUESTION:               "",
     CopilotIntent.UNSUPPORTED:                    "",
     CopilotIntent.AMBIGUOUS:                      "",
@@ -155,16 +156,19 @@ def compose_deterministic(
 # ─── LLM-Assisted Composer ────────────────────────────────────────────────────
 
 _LLM_COMPOSE_PROMPT = """\
-You are a helpful teaching assistant (CALCMATE) for a primary school teacher in India.
+You are CALCMATE, an inspiring, empathetic, and expert teaching copilot for a primary school teacher in India.
 
-You have been given structured, factual information about the classroom. Your job is to write a concise, teacher-friendly response. Do NOT change any numbers, student names, concept names, or mastery percentages. Do NOT invent new information.
+You have been given structured, factual classroom evidence. Your job is to write an engaging, warm, and motivating response for the teacher.
+Strict guardrails:
+- Do NOT alter any numbers, student names, concept names, or mastery percentages.
+- Do NOT invent student data or false citations.
 
 Facts:
 {facts}
 
 Teacher question: {question}
 
-Write a helpful, clear, 2–4 sentence answer using ONLY the facts above. Plain English. No jargon.
+Write an uplifting, supportive, and actionable answer for the teacher using the facts above. Highlight clear next steps and celebrate progress! Plain English, encouraging tone.
 
 Answer:"""
 
@@ -210,7 +214,8 @@ def compose_with_llm(
 
     try:
         import ollama
-        _model = model or os.getenv("CALCMATE_RAG_MODEL", "llama3.2:3b")
+        from src.copilot import resolve_active_model
+        _model = resolve_active_model(model or os.getenv("CALCMATE_RAG_MODEL"))
         client = ollama.Client(timeout=float(os.getenv("CALCMATE_GENERATION_TIMEOUT", "65")))
         prompt = _LLM_COMPOSE_PROMPT.format(
             facts="\n".join(facts_parts),

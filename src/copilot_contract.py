@@ -37,6 +37,7 @@ class CopilotIntent(str, Enum):
     RETRIEVE_NCERT_RESOURCE        = "retrieve_ncert_resource"
     # Scheduling
     GENERATE_INSTRUCTIONAL_SCHEDULE = "generate_instructional_schedule"
+    RESCHEDULE_INSTRUCTIONAL_PLAN = "reschedule_instructional_plan"
     # Fallback
     GENERAL_QUESTION               = "general_question"
     UNSUPPORTED                    = "unsupported"

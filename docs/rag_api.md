@@ -6,7 +6,7 @@ For the combined development API with separately implemented teacher signup, ope
 
 ## Verified Runtime
 
-- `answer_question(retriever, question, grade, subject="Math", k=3, model="qwen2.5:3b", stream=False, use_llm=True)` returns `(answer_text, retrieved_chunks)`.
+- `answer_question(retriever, question, grade, subject="Math", k=3, model="calcmate:latest", stream=False, use_llm=True)` returns `(answer_text, retrieved_chunks)`.
 - `get_default_retriever()` caches a retriever using `data/vector_store.index`, `data/vector_store_meta.json` and Sentence Transformers `all-MiniLM-L6-v2`.
 - Retrieval requires FAISS, NumPy, Sentence Transformers and the embedding model. The embedding model must be downloaded/cached before offline use.
 - Generated answers additionally require the `ollama` Python package, running Ollama and the configured model. `use_llm=false` invokes the backend's actual retrieval-only branch.
@@ -20,10 +20,10 @@ PowerShell with the existing virtual environment:
 ```powershell
 .\venv\Scripts\python.exe -m pip install -r requirements-api.txt
 # If setting up a new environment, also install requirements.txt.
-# For generated answers: python -m pip install ollama; ollama pull qwen2.5:3b
+# For generated answers: python -m pip install ollama; ollama create calcmate -f ModelFile
 
 # Optional: choose a model already available in `ollama list`.
-$env:CALCMATE_RAG_MODEL='llama3.2:3b'
+$env:CALCMATE_RAG_MODEL='calcmate:latest'
 .\venv\Scripts\python.exe -m uvicorn src.rag_api:app --host 0.0.0.0 --port 8000
 ```
 
@@ -77,7 +77,7 @@ $env:HF_HUB_OFFLINE='1'
 $env:TRANSFORMERS_OFFLINE='1'
 $env:CALCMATE_TEST_REAL_RAG='1'
 $env:CALCMATE_TEST_LLM='1'
-$env:CALCMATE_RAG_MODEL='llama3.2:3b'
+$env:CALCMATE_RAG_MODEL='calcmate:latest'
 .\venv\Scripts\python.exe -m unittest discover -s tests -p test_rag_api.py -v
 ```
 

@@ -79,7 +79,7 @@ class HealthResponse(BaseModel):
     corpus_available: bool
     coverage: dict = Field(default_factory=dict)
     generation_available: bool = False
-    configured_model: str = "llama3.2:3b"
+    configured_model: str = Field(default="calcmate:latest")
     generation_message: str = ""
 
 
@@ -97,15 +97,32 @@ _rag_loaded = False
 
 
 def _trace(event: str, **fields) -> None:
-    """Emit compact request-routing diagnostics to the backend terminal."""
-    details = " ".join(f"{key}={value!r}" for key, value in fields.items())
-    # Use flushed stdout so traces remain visible even when Uvicorn is started
-    # with log_level="error" (for example, by the integration test runner).
-    print(f"[CALCMATE_TRACE] {event}{f' {details}' if details else ''}", flush=True)
+    """Emit rich, formatted request-routing diagnostics to the backend terminal."""
+    CYAN = "\033[96m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    MAGENTA = "\033[95m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    RESET = "\033[0m"
+
+    _C = {
+        "route_check": CYAN,
+        "chat_received": GREEN,
+        "copilot_request": MAGENTA,
+        "intent_extracted": YELLOW,
+        "operation_complete": GREEN,
+        "rag_enrichment_start": CYAN,
+        "plain_rag_path": "\033[94m",
+    }
+    color = _C.get(event, CYAN)
+    details = "  ".join(f"{DIM}{key}{RESET}={color}{value!r}{RESET}" for key, value in fields.items())
+    print(f"{BOLD}{color}[CALCMATE COPILOT]{RESET} {BOLD}{event:<22}{RESET} {details}", flush=True)
 
 
 def generation_status():
-    model = os.getenv("CALCMATE_RAG_MODEL", "llama3.2:3b")
+    from src.model_config import configured_model
+    model = configured_model()
     host = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
     if "://" not in host:
         host = "http://" + host
@@ -186,7 +203,7 @@ def _run_copilot_pipeline(request: ChatRequest) -> ChatResponse:
     from src.copilot_contract import CopilotRequest as Req, CopilotIntent
     from src.intent_extractor import extract_intent
     from src.copilot_operations import dispatch
-    from src.response_composer import compose_deterministic, compose_with_llm
+    from src.response_composer import compose_deterministic
 
     copilot_req = Req(
         message=request.question,
@@ -285,17 +302,13 @@ def _run_copilot_pipeline(request: ChatRequest) -> ChatResponse:
         dummy_chunks = [SimpleNamespace(**c) for c in rag_chunks]
         rag_answer = source_excerpt_answer(dummy_chunks)
 
-    if request.use_llm and intent_result.intent in {CopilotIntent.GENERAL_QUESTION,CopilotIntent.EXPLAIN_CONCEPT,CopilotIntent.RECOMMEND_CURRICULUM_ACTIVITY,CopilotIntent.RETRIEVE_NCERT_RESOURCE} and not (op_result.structured_data or {}).get("deterministic_activity"):
-        copilot_response = compose_with_llm(
-            op_result, intent_result, copilot_req,
-            rag_answer=rag_answer, rag_chunks=rag_chunks,
-            model=os.getenv("CALCMATE_RAG_MODEL", "llama3.2:3b"),
-        )
-    else:
-        copilot_response = compose_deterministic(
-            op_result, intent_result, copilot_req,
-            rag_answer=rag_answer, rag_chunks=rag_chunks,
-        )
+    # Structured classroom facts are always composed deterministically. The
+    # only generative step is the grounded curriculum answer above, so a
+    # second model pass cannot rewrite mastery, attendance, or schedule facts.
+    copilot_response = compose_deterministic(
+        op_result, intent_result, copilot_req,
+        rag_answer=rag_answer, rag_chunks=rag_chunks,
+    )
 
     _trace(
         "copilot_response",

@@ -15,6 +15,7 @@ Design principles:
 from __future__ import annotations
 
 import csv
+import datetime as dt
 import json
 import os
 import re
@@ -106,6 +107,11 @@ _STUDENT_PATTERNS = [
 ]
 
 _ATTENTION_PATTERNS = [
+    r"\bwhat\s+(is|are)\s+(still\s+)?pending\b",
+    r"\bpending\s+(concepts?|topics?|chapters?|lessons?|work|syllabus)\b",
+    r"\bwhat\s+(is|are)\s+left\s+(to\s+teach|to\s+cover)?\b",
+    r"\bwhat\s+remains\s+(to\s+be\s+taught|uncovered)?\b",
+    r"\bunassessed\s+(concepts?|students?)\b",
     r"\bwho\s+needs?\s+(more\s+)?attention\b",
     r"\bwhich\s+students?\s+need\s+(more\s+)?attention\s*[?!]*$",
     r"\bstudents?\s+who\s+need\s+(more\s+)?attention\s*[?!]*$",
@@ -163,6 +169,12 @@ _NCERT_PATTERNS = [
 ]
 
 _SCHEDULE_PATTERNS = [
+    r"\bschedule[s]?\s+ahead\b",
+    r"\bwhat('s|\s+is)\s+the\s+schedule\s+ahead\b",
+    r"\bupcoming\s+(schedule|plan|timetable)\b",
+    r"\bhow\s+to\s+plan\s+ahead\b",
+    r"\bplan\s+ahead\b",
+    r"\bwhat\s+should\s+we\s+do\s+next\b",
     r"\b(generate|create|make|build|plan)\s+(a\s+)?(schedule|plan|timetable|rotation)\b",
     r"\bwho\s+(should|do\s+i)\s+(teach|work\s+with)\s+(first|next)\b",
     r"\binstruction(al)?\s+(schedule|plan|allocation)\b",
@@ -173,6 +185,53 @@ _SCHEDULE_PATTERNS = [
     r"\bwhat\s+should\s+i\s+teach\s+(next|first)\b",
     r"\bwhat\s+do\s+i\s+teach\s+(next|first)\b",
 ]
+
+_RESCHEDULE_PATTERNS = [
+    r"\b(on\s+leave|absent|not\s+coming|taking\s+leave|sick\s+leave)\b",
+    r"\b(reschedule|postpone|shift|move)\s+(the\s+)?(plan|schedule|class|session)\b",
+    r"\bwhy\s+not\s+reschedule\b",
+]
+_LEAVE_PATTERNS = [r"\bon\s+leave\b", r"\btaking\s+leave\b", r"\bsick\s+leave\b", r"\bnot\s+coming\b"]
+_RESCHEDULE_ACTION_PATTERNS = [r"\breschedule\b", r"\bpostpone\b", r"\bshift\b", r"\bmove\b"]
+
+def _extract_reschedule_dates(text: str) -> tuple[str, str]:
+    """Resolve common teacher-facing dates without relying on an LLM."""
+    today = dt.date.today()
+    lower = text.lower()
+    leave = None
+    explicit = re.search(r"\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b", text)
+    if explicit:
+        try:
+            leave = dt.date(int(explicit[1]), int(explicit[2]), int(explicit[3]))
+        except ValueError:
+            leave = None
+    if leave is None:
+        day_match = re.search(r"\b(?:next\s+|on\s+|this\s+)?(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b", lower)
+        if day_match:
+            target = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].index(day_match[1])
+            delta = (target - today.weekday()) % 7
+            if "next" in day_match[0] or delta == 0:
+                delta = delta or 7
+            leave = today + dt.timedelta(days=delta)
+        elif "tomorrow" in lower:
+            leave = today + dt.timedelta(days=1)
+        elif "next week" in lower:
+            leave = today + dt.timedelta(days=7)
+    leave = leave or today
+    return leave.isoformat(), _next_school_day(leave).isoformat()
+
+def _next_school_day(day: dt.date) -> dt.date:
+    candidate = day + dt.timedelta(days=1)
+    while candidate.weekday() >= 5:
+        candidate += dt.timedelta(days=1)
+    return candidate
+
+def _extract_grades(text: str, default: int) -> list[int]:
+    grades = {int(m.group(2) or m.group(3)) for m in _GRADE_PATTERN.finditer(text)}
+    grouped = re.search(r"\bgrades?\s+([1-5](?:\s*(?:,|and)\s*[1-5])*)\b", text, re.I)
+    if grouped:
+        grades.update(int(value) for value in re.findall(r"[1-5]", grouped.group(1)))
+    return sorted(g for g in grades if 1 <= g <= 5) or [default]
 
 _CLASSROOM_SUMMARY_PATTERNS = [
     r"\b(classroom|class|group)\s+(summary|overview|status|snapshot)\b",
@@ -226,6 +285,21 @@ def _extract_grade(text: str, default: int) -> int:
 # ─── Concept phrase extraction ────────────────────────────────────────────────
 
 _CONCEPT_PHRASES = [
+    r"\b(counting(\s+objects)?|counting\s+up\s+to\s+20)\b",
+    r"\b(number\s+names?(\s+up\s+to\s+20)?)\b",
+    r"\b(number\s+sequence|number\s+order)\b",
+    r"\b(addition\s+within\s+20|adding\s+within\s+20)\b",
+    r"\b(subtraction\s+within\s+20|subtracting\s+within\s+20)\b",
+    r"\b(zero|introduction\s+to\s+zero)\b",
+    r"\b(comparison\s+of\s+lengths?|longer\s+and\s+shorter|long\s+and\s+short)\b",
+    r"\b(comparison\s+of\s+weight|heavier\s+and\s+lighter|heavy\s+and\s+light)\b",
+    r"\b(basic\s+2[Dd]\s+shapes|2[Dd]\s+shapes|circle|square|triangle|rectangle)\b",
+    r"\b(sorting\s+and\s+grouping|sorting)\b",
+    r"\b(numbers\s+up\s+to\s+100)\b",
+    r"\b(place\s+value|tens\s+and\s+ones)\b",
+    r"\b(addition\s+without\s+regrouping|addition\s+with\s+regrouping|regrouping|carrying)\b",
+    r"\b(subtraction\s+without\s+borrowing|subtraction\s+with\s+borrowing|borrowing)\b",
+    r"\b(skip\s+counting)\b",
     # "fractions", "multiplication", "addition", etc.
     r"\b(fractions?|fraction\s+representation|equivalent\s+fractions?|comparing\s+fractions?)\b",
     r"\b(multiplications?|multiplication\s+table[s]?|times\s+table[s]?)\b",
@@ -309,6 +383,18 @@ def _classify_deterministic(text: str, request: CopilotRequest) -> IntentResult:
     student_name = _extract_student_name(text)
 
     params: dict = {"grade": grade}
+    has_leave = _matches_any(text, _LEAVE_PATTERNS)
+    has_action = _matches_any(text, _RESCHEDULE_ACTION_PATTERNS)
+    has_absence_window = bool(re.search(r"\babsent\b.*\b(?:tomorrow|next\s+\w+|on\s+\w+|20\d{2}[-/]\d{1,2}[-/]\d{1,2})\b", text, re.I))
+    teacher_absence = bool(re.search(r"\b(?:i\s+am|i'm|i\s+will|i\s+won't|my\s+leave|teacher)\b", text, re.I))
+    if (has_leave and (has_action or has_absence_window or re.search(r"\b(?:tomorrow|next\s+\w+|on\s+\w+)\b", text, re.I))) or (has_absence_window and teacher_absence) or (has_action and re.search(r"\b(?:plan|schedule|class|session)\b", text, re.I)):
+        params["grades"] = _extract_grades(text, request.grade)
+        params["leave_date"], params["rescheduled_date"] = _extract_reschedule_dates(text)
+        return IntentResult(
+            intent=CopilotIntent.RESCHEDULE_INSTRUCTIONAL_PLAN,
+            parameters=params,
+            confidence=1.0,
+        )
     if concept_id:
         params["concept_id"] = concept_id
     if concept_phrase:
@@ -440,6 +526,7 @@ Valid intents (choose one):
   classroom_learning_summary, group_prerequisite_readiness,
   recommend_curriculum_activity, retrieve_ncert_resource,
   generate_instructional_schedule, general_question
+  reschedule_instructional_plan
 
 Parameters to extract (include only what is present):
   grade (int 1-5), concept_phrase (str), student_name (str)
@@ -459,7 +546,8 @@ def _try_llm_extraction(request: CopilotRequest) -> Optional[IntentResult]:
     """
     try:
         import ollama
-        model = os.getenv("CALCMATE_RAG_MODEL", "llama3.2:3b")
+        from src.model_config import configured_model
+        model = configured_model()
         client = ollama.Client(timeout=10.0)
         prompt = _LLM_EXTRACTION_PROMPT.format(message=request.message)
         resp = client.generate(model=model, prompt=prompt,
@@ -534,7 +622,10 @@ def extract_intent(request: CopilotRequest) -> IntentResult:
         return deterministic
 
     # Attempt LLM enrichment for low-confidence / general cases.
-    if request.use_llm:
+    # Deterministic routing is the production default. Enable model-assisted
+    # routing only when deliberately configured; it must never replace the
+    # classroom-safe fallback classifier.
+    if request.use_llm and os.getenv("CALCMATE_ENABLE_LLM_ROUTING", "false").lower() in {"1", "true", "yes", "on"}:
         llm_result = _try_llm_extraction(request)
         if llm_result and llm_result.intent != CopilotIntent.GENERAL_QUESTION:
             # Merge deterministic params (screen context) into LLM result

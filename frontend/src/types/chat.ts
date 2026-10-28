@@ -23,6 +23,18 @@ export type ScheduleAction = {
   priority: "balanced" | "learning-needs";
   date: string;
 };
+export type RescheduleTask = { grade:number; concept_id?:string|null; concept:string; mastery?:number; activity:string };
+export type RescheduledSlot = { grade:number; concept_id?:string|null; concept:string; priority:string; duration_minutes:number; reason:string };
+export type RescheduleAction = {
+  action:"reschedule_plan";
+  leave_date:string;
+  rescheduled_date:string;
+  leave_mode:"independent_peer_practice";
+  grades:number[];
+  zero_direct_instruction:boolean;
+  leave_day_tasks:RescheduleTask[];
+  rescheduled_slots:RescheduledSlot[];
+};
 
 /** Stage 3: extended response with structured copilot fields. All new fields are optional for backward compatibility. */
 export type RagResponse = {
@@ -39,6 +51,7 @@ export type RagResponse = {
   limitations?: string[];
   // Stage 4: present only when intent==="generate_instructional_schedule"
   schedule_action?: ScheduleAction | null;
+  reschedule_action?: RescheduleAction | null;
 };
 export type Conversation = { id:string; workspace_id:string; title:string; grade:Grade; created_at:string; updated_at:string };
 export type ChatMessage = {

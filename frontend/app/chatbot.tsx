@@ -25,7 +25,7 @@ import { Button } from "@/components/Button";
 import { AssistantMessage } from "@/components/AssistantMessage";
 import { ScheduleCard } from "@/components/ScheduleCard";
 import { colors } from "@/theme";
-import { Conversation, ChatMessage, RagChunk } from "@/types/chat";
+import { Conversation, ChatMessage, RagChunk, RescheduleAction } from "@/types/chat";
 import type { GeneralSchedule } from "@/types/generalSchedule";
 import {
   listConversations,
@@ -39,6 +39,7 @@ import {
 import { apiBaseUrl } from "@/services/ragClient";
 import { useGrade } from "@/hooks/useGrade";
 import { chatErrorSummary } from "@/services/chatPresentation";
+import { applyReschedulePlan } from "@/services/rescheduleService";
 
 /* ---------- Design tokens: ivory, deep forest, antique gold ---------- */
 const P = {
@@ -58,11 +59,36 @@ const P = {
 const SERIF = Platform.select({ ios: "Georgia", android: "serif", default: "serif" });
 
 const gradePrompts: Record<number, string[]> = {
-  1: ["Explain counting using classroom objects", "Generate five addition questions within 20", "Suggest an activity for comparing numbers"],
-  2: ["Explain tens and ones using bundled sticks", "Generate five subtraction practice questions", "Suggest a place-value activity"],
-  3: ["Explain multiplication using equal groups", "Generate five practice questions on multiplication", "How can I teach division through equal sharing?"],
-  4: ["Explain equivalent fractions using paper strips", "Generate five practice questions on fractions", "Suggest an activity for perimeter and measurement"],
-  5: ["Explain decimals using a place-value chart", "Compare fractions with different denominators", "Suggest an activity for measuring area"],
+  1: [
+    "How do I introduce counting up to 20 using concrete objects?",
+    "Suggest a hands-on activity for number sequence and comparing lengths",
+    "What is still pending to cover in Grade 1?",
+    "Who needs more attention in Grade 1 today?"
+  ],
+  2: [
+    "Explain tens and ones using bundled sticks of 10",
+    "Who is struggling with place value in Grade 2?",
+    "How to teach two-digit addition with regrouping?",
+    "What should I teach next for Grade 2?"
+  ],
+  3: [
+    "Explain multiplication using equal groups and arrays",
+    "Who needs more attention in Grade 3 today?",
+    "What concepts are still pending in Grade 3?",
+    "Generate an instructional rotation schedule"
+  ],
+  4: [
+    "Who is struggling with fractions in Grade 4?",
+    "Why are students struggling with equivalent fractions?",
+    "Suggest a concrete teaching activity for equivalent fractions",
+    "What is the schedule ahead for our multi-grade class?"
+  ],
+  5: [
+    "Explain decimals using a metric place-value chart",
+    "Compare fractions with different denominators",
+    "Who needs support in Grade 5 measurement and area?",
+    "What topics are still pending in Grade 5?"
+  ],
 };
 
 const EMPTY_COLORS = {
@@ -176,6 +202,52 @@ function Sources({ json }: { json: string }) {
             </View>
           ))
         : null}
+    </View>
+  );
+}
+
+function RescheduleCard({ action }: { action: RescheduleAction }) {
+  const [applied, setApplied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function apply() {
+    if (applied || busy) return;
+    setBusy(true); setError("");
+    try { await applyReschedulePlan(action); setApplied(true); }
+    catch (e) { setError(e instanceof Error ? e.message : "Could not save this reschedule."); }
+    finally { setBusy(false); }
+  }
+  return (
+    <View style={styles.rescheduleCard}>
+      <View style={styles.rescheduleHeader}>
+        <View style={styles.rescheduleTitleRow}>
+          <Ionicons name="calendar-clear-outline" size={18} color={P.forest} />
+          <Text style={styles.rescheduleTitle}>Reschedule proposal</Text>
+        </View>
+        <Text style={styles.rescheduleMeta}>{action.leave_date} to {action.rescheduled_date}</Text>
+      </View>
+      <View style={styles.rescheduleSection}>
+        <Text style={styles.rescheduleLabel}>Leave day</Text>
+        <Text style={styles.rescheduleBody}>Independent peer practice and consolidation only. No direct teacher instruction is scheduled.</Text>
+        {action.leave_day_tasks.slice(0, 5).map((task, index) => (
+          <Text key={`${task.grade}-${task.concept_id ?? index}`} style={styles.rescheduleItem}>Grade {task.grade}: {task.concept}</Text>
+        ))}
+      </View>
+      <View style={styles.rescheduleSection}>
+        <Text style={styles.rescheduleLabel}>Return day priority</Text>
+        {action.rescheduled_slots.slice(0, 5).map((slot, index) => (
+          <Text key={`${slot.grade}-${slot.concept_id ?? index}`} style={styles.rescheduleItem}>Grade {slot.grade}: {slot.concept} · {slot.duration_minutes} min</Text>
+        ))}
+      </View>
+      <Button
+        label={applied ? "Saved to timetable" : busy ? "Saving..." : "Apply reschedule to timetable"}
+        accessibilityLabel={applied ? "Reschedule saved to timetable" : "Apply reschedule to timetable"}
+        icon={applied ? "checkmark-circle-outline" : "save-outline"}
+        variant={applied ? "secondary" : "primary"}
+        disabled={applied || busy}
+        onPress={() => void apply()}
+      />
+      {error ? <Text style={styles.rescheduleError}>{error}</Text> : null}
     </View>
   );
 }
@@ -400,12 +472,22 @@ export default function ChatbotScreen({ embedded = false }: { embedded?: boolean
         </View>
       );
     let scheduleDraft: GeneralSchedule | null = null;
+    let intentName: string | null = null;
+    let nextStep: string | null = null;
+    let reschedule: RescheduleAction | null = null;
     if (item.request_json) {
       try {
         const meta = JSON.parse(item.request_json);
         if (meta?.schedule && meta.schedule.kind === "general-schedule") {
           scheduleDraft = meta.schedule as GeneralSchedule;
         }
+        if (typeof meta?.intent === "string" && meta.intent) {
+          intentName = meta.intent;
+        }
+        if (typeof meta?.recommended_next_step === "string" && meta.recommended_next_step) {
+          nextStep = meta.recommended_next_step;
+        }
+        if (meta?.reschedule?.action === "reschedule_plan") reschedule = meta.reschedule as RescheduleAction;
       } catch {
         /* Ignore non-schedule metadata */
       }
@@ -415,10 +497,24 @@ export default function ChatbotScreen({ embedded = false }: { embedded?: boolean
         <View style={styles.assistantHead}>
           <Mark size={24} />
           <Text style={styles.assistantName}>Calcmate</Text>
+          {intentName && intentName !== "general_question" ? (
+            <View style={styles.intentBadge}>
+              <Text style={styles.intentBadgeText}>
+                {intentName.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+              </Text>
+            </View>
+          ) : null}
         </View>
         <View style={styles.assistantBody}>
           <AssistantMessage text={item.text} onResize={scrollToEnd} />
+          {nextStep ? (
+            <View style={styles.nextStepCard}>
+              <Ionicons name="sparkles" size={14} color={P.gold} />
+              <Text style={styles.nextStepText}>{nextStep}</Text>
+            </View>
+          ) : null}
           {scheduleDraft ? <ScheduleCard draft={scheduleDraft} savedId={scheduleDraft.id} /> : null}
+          {reschedule ? <RescheduleCard action={reschedule} /> : null}
           <Sources json={item.sources_json} />
         </View>
       </View>
@@ -797,8 +893,29 @@ function EmptyClassroomArtwork() {
                 <EmptyTypingTitle />
 
                 <Text style={emptyStyles.subtitle}>
-                  Every great lesson starts with a plan.
+                  Curriculum- & Knowledge-State-Aware Teacher Copilot
                 </Text>
+
+                <View style={styles.promptList}>
+                  {prompts.map((p, idx) => (
+                    <Pressable
+                      key={idx}
+                      accessibilityRole="button"
+                      onPress={() => {
+                        changeDraft(p);
+                        composer.current?.focus();
+                      }}
+                      style={({ pressed }) => [
+                        styles.prompt,
+                        pressed && { backgroundColor: P.sage, transform: [{ scale: 0.98 }] },
+                      ]}
+                    >
+                      <Ionicons name="bulb-outline" size={17} color={P.gold} />
+                      <Text style={styles.promptText}>{p}</Text>
+                      <Ionicons name="arrow-forward" size={14} color={P.muted} />
+                    </Pressable>
+                  ))}
+                </View>
               </View>
             }
             ListFooterComponent={
@@ -972,6 +1089,58 @@ const styles = StyleSheet.create({
 
   loading: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
   loadingText: { color: P.muted, fontSize: 13 },
+
+  /* Intent badge & Next step */
+  intentBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: P.sage,
+    marginLeft: 6,
+  },
+  intentBadgeText: {
+    fontSize: 10.5,
+    fontWeight: "700",
+    color: P.forest,
+    letterSpacing: 0.3,
+  },
+  nextStepCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: P.goldSoft,
+    borderLeftWidth: 3,
+    borderLeftColor: P.gold,
+  },
+  nextStepText: {
+    flex: 1,
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: P.body,
+    fontWeight: "500",
+  },
+  rescheduleCard: {
+    marginTop: 12,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: P.line,
+    backgroundColor: P.card,
+    gap: 12,
+  },
+  rescheduleHeader: { gap: 4 },
+  rescheduleTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  rescheduleTitle: { fontSize: 15, fontWeight: "700", color: P.ink },
+  rescheduleMeta: { fontSize: 12, color: P.muted },
+  rescheduleSection: { gap: 5 },
+  rescheduleLabel: { fontSize: 12, fontWeight: "700", color: P.forest, letterSpacing: 0.3 },
+  rescheduleBody: { fontSize: 12.5, lineHeight: 18, color: P.body },
+  rescheduleItem: { fontSize: 12.5, lineHeight: 18, color: P.body, paddingLeft: 6 },
+  rescheduleError: { fontSize: 12, color: P.danger, lineHeight: 17 },
 
   /* Messages */
   chatContent: {

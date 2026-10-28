@@ -26,7 +26,7 @@ Offline-first Expo + React Native teacher workspace. Use **Explore Demo** to ope
   - `python src/demo.py --grade 4`
 - Verified library contracts:
   - `Retriever.retrieve(query, grade?, subject?, k?, log_call?) -> list[RetrievedChunk]`
-  - `answer_question(retriever, question, grade, subject="Math", k=3, model="qwen2.5:3b", stream=False, use_llm=True) -> tuple[str, list[RetrievedChunk]]`
+  - `answer_question(retriever, question, grade, subject="Math", k=3, model="calcmate:latest", stream=False, use_llm=True) -> tuple[str, list[RetrievedChunk]]`
 - Missing endpoints:
   - The RAG-only service has no accounts; the combined service adds `/auth/config`, `/auth/signup`, `/auth/login`, `/auth/me` and `/auth/logout`.
   - No teacher profile endpoint.

@@ -84,7 +84,7 @@ $env:CALCMATE_TEST_LLM='1'
 .\venv\Scripts\python.exe -m pytest -q tests
 ```
 
-The optional real-generation checks require the configured Ollama model, normally `llama3.2:3b`, to be running. Offline environment settings above refer to the cached embedding model; Ollama serves locally.
+The optional real-generation checks require the configured Ollama model, normally `calcmate:latest` built from `ModelFile`, to be running. Offline environment settings above refer to the cached embedding model; Ollama serves locally.
 
 From `frontend`:
 

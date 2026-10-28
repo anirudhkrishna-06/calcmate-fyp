@@ -9,7 +9,7 @@ Run the combined API from the repository root using the existing environment. Th
 ```powershell
 # Trusted local development; use HTTPS for deployed school servers.
 $env:CALCMATE_ALLOW_INSECURE_AUTH='true'
-$env:CALCMATE_RAG_MODEL='llama3.2:3b'
+$env:CALCMATE_RAG_MODEL='calcmate:latest'
 .\venv\Scripts\python.exe -m src.api --host 0.0.0.0 --port 8000
 ```
 
@@ -41,14 +41,14 @@ The backend loads embedding models lazily. Cold initialization on a busy machine
 
 ## Assistant readiness
 
-Retrieval and generation are separate. `/health` now reports `generation_available`, `configured_model` and an actionable `generation_message`, and the connection screen displays these diagnostics. The default local model is `llama3.2:3b`; override it with `CALCMATE_RAG_MODEL` if needed.
+Retrieval and generation are separate. `/health` now reports `generation_available`, `configured_model` and an actionable `generation_message`, and the connection screen displays these diagnostics. The default local model is `calcmate:latest`, built from `ModelFile`; override it with `CALCMATE_RAG_MODEL` only for an intentional deployment change.
 
 Start Ollama on the server computer and install the configured model once:
 
 ```powershell
 ollama serve
 # In another terminal, if the model is not already installed:
-ollama pull llama3.2:3b
+ollama create calcmate -f ModelFile
 ```
 
 If the Ollama desktop app is already running, another `ollama serve` process is unnecessary. The phone connects to the CalcMate API on port 8000, not directly to Ollama.

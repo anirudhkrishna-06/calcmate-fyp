@@ -2,7 +2,7 @@ const assert=require('node:assert/strict');const fs=require('node:fs');const pat
 const {spawn}=require('node:child_process');const {DatabaseSync}=require('node:sqlite');const Module=require('node:module');const ts=require('typescript');
 const repository=path.resolve(__dirname,'../..');const directory=fs.mkdtempSync(path.join(os.tmpdir(),'calcmate-http-'));
 const credentials=new Map();const cache=new Map();const originalLoad=Module._load;const originalFetch=global.fetch;let server,native,network=true;
-const environment={...process.env,CALCMATE_AUTH_DB:path.join(directory,'accounts.db'),CALCMATE_ALLOW_INSECURE_AUTH:'true',CALCMATE_ADMIN_PASSWORD:'integration-test-admin',CALCMATE_PRESENTATION_ROSTER:'true',HF_HUB_OFFLINE:'1',TRANSFORMERS_OFFLINE:'1',CALCMATE_RAG_MODEL:process.env.CALCMATE_RAG_MODEL||'llama3.2:3b'};
+const environment={...process.env,CALCMATE_AUTH_DB:path.join(directory,'accounts.db'),CALCMATE_ALLOW_INSECURE_AUTH:'true',CALCMATE_ADMIN_PASSWORD:'integration-test-admin',CALCMATE_PRESENTATION_ROSTER:'true',HF_HUB_OFFLINE:'1',TRANSFORMERS_OFFLINE:'1',CALCMATE_RAG_MODEL:process.env.CALCMATE_RAG_MODEL||'calcmate:latest'};
 const python=path.join(repository,'venv/Scripts/python.exe');
 Module._load=function(request,parent,isMain){
   if(request==='react-native')return {Platform:{OS:'android'}};

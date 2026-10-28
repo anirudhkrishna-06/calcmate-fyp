@@ -11,7 +11,7 @@ export function assistantDocument(text:string):string {
   return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'none'">
   <style>html,body{margin:0;padding:0;background:transparent;color:${colors.charcoal};font:16px/1.65 system-ui,sans-serif;overflow-wrap:anywhere}
-  *{box-sizing:border-box}main{padding:4px 2px;min-width:0;max-width:100%;overflow:hidden}h1,h2,h3,h4,h5,h6{font-size:18px;line-height:1.4;margin:16px 0 8px;font-weight:650}h1:first-child,h2:first-child,p:first-child{margin-top:0}
+  *{box-sizing:border-box}main{padding:4px 2px;min-width:0;max-width:100%;overflow:hidden}strong{color:#1C2B23;font-weight:700}h1,h2,h3{color:#294C38;letter-spacing:-0.2px}hr{border:none;border-top:1px dashed #ECE7DB;margin:16px 0}h1,h2,h3,h4,h5,h6{font-size:18px;line-height:1.4;margin:16px 0 8px;font-weight:650}h1:first-child,h2:first-child,p:first-child{margin-top:0}
   p{margin:0 0 12px}ul,ol{padding-left:24px;margin:8px 0 14px}li{margin:4px 0}li p{margin:0}
   pre{padding:12px;background:${colors.sageLight};border-radius:6px;white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.6 monospace}
   code{font:13px/1.6 monospace;background:${colors.sageLight};padding:2px 4px}pre code{padding:0;background:none}

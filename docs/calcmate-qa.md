@@ -7,7 +7,7 @@ This follow-up supersedes the authentication, logout and recovery limitations in
 - Implemented Welcome, explicit demo banner/Exit demo, signup, pending operator approval, approved login and Logout. The separate account SQLite service uses salted scrypt, hashed server tokens, persistent rate limiting and a fixed 24-hour cached session policy. Passwords are not saved on the device or included in validation errors/backups.
 - Added grade-aware Home actions, transactional whole-class attendance, focused student sections, clearer planning steps, atomic matching-workspace backup restoration and friendly chat delivery errors/connection diagnostics.
 - Latest TypeScript, ESLint, database, workspace-screen and chat-screen tests passed. Database tests include zero HTTP classroom operations, seed idempotence, restart persistence, attendance rollback, backup restoration/rollback/isolation and refusal to send account credentials over LAN HTTP. Screen tests adapt native bridges and are not pixel/device tests.
-- All eleven Python tests passed, including actual retrieval and Ollama generation using cached embeddings and llama3.2:3b. Expo Doctor passed 21/21 checks; installed Expo dependency validation reported up to date with its offline-mode caveat. No dependency version upgrades were made.
+- All eleven Python tests passed, including actual retrieval and Ollama generation using cached embeddings and the repository ModelFile. Expo Doctor passed 21/21 checks; installed Expo dependency validation reported up to date with its offline-mode caveat. No dependency version upgrades were made.
 - Latest live HTTP integration passed actual signup, operator approval, login, offline database reopen, RAG/Ollama answer/source persistence and server logout revocation. Early reruns during native compilation hit the fixture's 120-second cold-model startup deadline, including outside the network sandbox. The fixture now captures runtime diagnostics and allows a bounded 300-second cold startup (`CALCMATE_TEST_STARTUP_MS` override). The actual frontend's 90-second chat request timeout was not extended. Cold backend initialization may still require Retry.
 - Android Metro bundle returned HTTP 200 (9,764,688 bytes). Native prebuild passed without dependency version changes. The initial universal release build failed at D8 DEX merging with the generated 2 GB Java heap; retry with a 4 GB heap/two workers succeeded in 3m58s using cached compilation and a fresh final JavaScript bundle. The Expo build-memory plugin was verified through config introspection; Doctor passed 21/21 again afterward.
 - APK: `frontend/android/app/build/outputs/apk/release/app-release.apk`, 107,620,232 bytes. ZIP inspection confirms 3,686,516 bytes of bundled JavaScript, twenty bundled fonts and four native architectures. AAPT confirms package `org.calcmate.teacher` and a launchable MainActivity. This proves packaging, not rendered Android launch. The APK uses development signing, not a production distribution key.
@@ -34,7 +34,7 @@ Verification date: 2026-10-10. Changes in this pass are limited to regression te
 | Schedule | Tests passed for current SQLite evidence (including a competency edit), deterministic prerequisite ordering, differing strong/weak/missing evidence, absent students, saved plan restoration and workspace isolation. Plans remain explicitly DEMO/MOCK. |
 | Backup | Version-2 JSON serialization, parsing, scoped contents, credential-key exclusion, cancelled/failed selection and read-back verification passed with the file bridge mocked. Native folder selection/write is unverified; backup restore is not implemented. |
 | Chat | SQLite conversation/message/source restoration, offline history, interrupted requests, retry without duplicate user messages, pending guards, HTTP 422/500/503, network/timeout/invalid JSON/source errors passed. Actual screen tests passed with native bridges mocked. |
-| Python API | Seven unittest tests passed, including real retrieval and Ollama generation through FastAPI TestClient using cached embeddings and `llama3.2:3b`. Health, schema, CORS and redacted errors passed. This pass did not verify phone-to-server networking. |
+| Python API | Seven unittest tests passed, including real retrieval and Ollama generation through FastAPI TestClient using cached embeddings and `calcmate:latest`. Health, schema, CORS and redacted errors passed. This pass did not verify phone-to-server networking. |
 | Backend / restricted UI | `git diff -- src` was empty. Frontend source inspection found no knowledge-graph surface or logout action. RAG algorithms were not rewritten. |
 | Android usability | Existing shared theme, wrapping choices, compact lists and chat keyboard structure inspected. Pixel-level layout, actual keyboard avoidance, MathML and accessibility remain device checks. |
 
@@ -49,7 +49,7 @@ No physical Android device was attached. The existing Pixel 5 emulator was cold-
 From the repository root, using the already installed Python environment and available Ollama model:
 
 ```powershell
-$env:CALCMATE_RAG_MODEL='llama3.2:3b'
+$env:CALCMATE_RAG_MODEL='calcmate:latest'
 .\venv\Scripts\python.exe -m uvicorn src.rag_api:app --host 0.0.0.0 --port 8000
 ```
 
@@ -89,6 +89,6 @@ $env:HF_HUB_OFFLINE='1'
 $env:TRANSFORMERS_OFFLINE='1'
 $env:CALCMATE_TEST_REAL_RAG='1'
 $env:CALCMATE_TEST_LLM='1'
-$env:CALCMATE_RAG_MODEL='llama3.2:3b'
+$env:CALCMATE_RAG_MODEL='calcmate:latest'
 .\venv\Scripts\python.exe -m unittest discover -s tests -p test_rag_api.py -v
 ```
