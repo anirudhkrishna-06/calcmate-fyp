@@ -40,6 +40,7 @@ class ChatRequest(BaseModel):
     concept_id:   Optional[str] = Field(default=None)
     screen_context: Optional[str] = Field(default=None)
     classroom_evidence: ClassroomEvidence | None = None
+    conversation_history: list[dict[str, str]] = Field(default_factory=list, max_length=12)
 
 
 class ChunkResponse(BaseModel):
@@ -118,6 +119,19 @@ def _trace(event: str, **fields) -> None:
     color = _C.get(event, CYAN)
     details = "  ".join(f"{DIM}{key}{RESET}={color}{value!r}{RESET}" for key, value in fields.items())
     print(f"{BOLD}{color}[CALCMATE COPILOT]{RESET} {BOLD}{event:<22}{RESET} {details}", flush=True)
+
+
+def _trace_request_snapshot(request: ChatRequest) -> None:
+    """Log a concise, privacy-conscious summary of the classroom context."""
+    evidence = request.classroom_evidence
+    if not evidence or not request.student_id:
+        return
+    student = next((row for row in evidence.students if row.id == request.student_id), None)
+    assessments = [row for row in evidence.assessments if row.student_id == request.student_id]
+    attendance = [row for row in evidence.attendance if row.student_id == request.student_id]
+    _trace("student_context", student=student.name if student else "unknown", grade=student.grade if student else request.grade,
+           assessments=len(assessments), attendance=len(attendance), roster_size=len(evidence.students),
+           evidence_revision=evidence.revision)
 
 
 def generation_status():
@@ -203,7 +217,7 @@ def _run_copilot_pipeline(request: ChatRequest) -> ChatResponse:
     from src.copilot_contract import CopilotRequest as Req, CopilotIntent
     from src.intent_extractor import extract_intent
     from src.copilot_operations import dispatch
-    from src.response_composer import compose_deterministic
+    from src.response_composer import compose_deterministic, compose_with_llm
 
     copilot_req = Req(
         message=request.question,
@@ -215,9 +229,25 @@ def _run_copilot_pipeline(request: ChatRequest) -> ChatResponse:
         student_id=request.student_id,
         concept_id=request.concept_id,
         screen_context=request.screen_context,
+        conversation_history=request.conversation_history,
     )
     from src.classroom_queries import bind_student_context
     bind_student_context(copilot_req)
+    if request.classroom_evidence and copilot_req.student_id:
+        selected_student = next((s for s in request.classroom_evidence.students if s.id == copilot_req.student_id), None)
+        profile = request.classroom_evidence.student_context if request.classroom_evidence.student_context_id == copilot_req.student_id else None
+        observations = (profile or {}).get("observations") or (selected_student.observations if selected_student else [])
+        copilot_req.student_profile_context = {
+            "student": {"name": selected_student.name, "grade": selected_student.grade} if selected_student else {},
+            "teacher_observations": observations,
+            "assessments": [a.model_dump(mode="json") for a in request.classroom_evidence.assessments if a.student_id == copilot_req.student_id],
+            "attendance": [a.model_dump(mode="json") for a in request.classroom_evidence.attendance if a.student_id == copilot_req.student_id],
+            "as_of": str(request.classroom_evidence.as_of),
+            "estimator_version": request.classroom_evidence.estimator_version,
+        }
+        _trace("student_profile_context", attached=True, observation_count=len(observations),
+               assessment_count=len(copilot_req.student_profile_context["assessments"]),
+               attendance_count=len(copilot_req.student_profile_context["attendance"]))
 
     _trace(
         "copilot_request",
@@ -303,13 +333,18 @@ def _run_copilot_pipeline(request: ChatRequest) -> ChatResponse:
         dummy_chunks = [SimpleNamespace(**c) for c in rag_chunks]
         rag_answer = source_excerpt_answer(dummy_chunks)
 
-    # Structured classroom facts are always composed deterministically. The
-    # only generative step is the grounded curriculum answer above, so a
-    # second model pass cannot rewrite mastery, attendance, or schedule facts.
-    copilot_response = compose_deterministic(
-        op_result, intent_result, copilot_req,
-        rag_answer=rag_answer, rag_chunks=rag_chunks,
-    )
+    if copilot_req.screen_context == "student_copilot" and copilot_req.student_id and copilot_req.use_llm:
+        _trace("student_ai_generation_start", model=os.getenv("CALCMATE_RAG_MODEL", "configured"),
+               evidence_status=op_result.status.value, structured=bool(op_result.structured_data))
+        copilot_response = compose_with_llm(op_result, intent_result, copilot_req,
+                                             rag_answer=rag_answer, rag_chunks=rag_chunks)
+        _trace("student_ai_generation_complete", used_llm=copilot_response.used_llm,
+               answer_length=len(copilot_response.answer))
+    else:
+        copilot_response = compose_deterministic(
+            op_result, intent_result, copilot_req,
+            rag_answer=rag_answer, rag_chunks=rag_chunks,
+        )
 
     _trace(
         "copilot_response",
@@ -377,6 +412,7 @@ def chat(request: ChatRequest, http_request: Request, authorization: str | None 
         if re.search(r"\b(?:students?|classroom|attendance|mastery|assessment|who needs? (?:support|help)|who (?:is|are) (?:absent|struggling))\b", request.question, re.I) and not re.search(r"\b(?:suggest|activity|teach|explain|textbook|ncert)\b", request.question, re.I):
             return ChatResponse(answer="Classroom records are not available for this question. Sign in to your approved teacher account and refresh classroom evidence. Explore Demo does not send student records to the Assistant.", chunks=[], mode="copilot", intent="classroom_record_query")
     _trace("chat_received", subject=request.subject, grade=request.grade, use_llm=request.use_llm)
+    _trace_request_snapshot(request)
     # Stage 3: Route structured copilot requests through the intent pipeline.
     if _is_copilot_request(request):
         with _lock:

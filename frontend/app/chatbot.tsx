@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
@@ -31,7 +32,9 @@ import {
   listConversations,
   createConversation,
   getOrCreateStudentConversation,
+  createStudentConversation,
   selectConversation,
+  deleteConversation,
   restoreConversation,
   conversationMessages,
   sendMessage,
@@ -259,13 +262,12 @@ export default function ChatbotScreen({ embedded = false }: { embedded?: boolean
     prompt?: string;
     studentId?: string;
     studentName?: string;
-    studentThread?: string;
     conceptId?: string;
     screenContext?: string;
   }>();
   const { grade, setGrade, error: gradeError } = useGrade(Number(params.grade));
   const prompts = gradePrompts[grade];
-  const studentMode = Boolean(params.studentId && params.studentThread === "true");
+  const studentMode = Boolean(params.studentId);
   const studentName = params.studentName || "Student";
   const contextualDraft = useRef("");
   const [conversation, setConversation] = useState<Conversation | null>(null);
@@ -297,14 +299,14 @@ export default function ChatbotScreen({ embedded = false }: { embedded?: boolean
     if (scroll.current) list.current?.scrollToEnd({ animated: true });
   }, []);
   const refresh = useCallback(async (id: string) => {
-    const [rows, conversations] = await Promise.all([conversationMessages(id), listConversations()]);
+    const [rows, conversations] = await Promise.all([conversationMessages(id), listConversations(studentMode ? params.studentId : undefined)]);
     if (!mounted.current) return;
     setHistory(conversations);
     if (active.current === id) {
       setMessages(rows);
       setConversation(conversations.find((c) => c.id === id) ?? null);
     }
-  }, []);
+  }, [studentMode, params.studentId]);
   useFocusEffect(
     useCallback(() => {
       if (active.current) void refresh(active.current).catch(() => setError("Could not reload saved conversation."));
@@ -367,9 +369,30 @@ export default function ChatbotScreen({ embedded = false }: { embedded?: boolean
   }
   async function newChat() {
     try {
-      await switchTo(await createConversation(grade));
+      await switchTo(studentMode && params.studentId
+        ? await createStudentConversation(params.studentId,studentName,grade)
+        : await createConversation(grade));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not create chat.");
+    }
+  }
+  function confirmDelete(item: Conversation) {
+    Alert.alert("Delete conversation?", `“${item.title}” and its messages will be permanently deleted.`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: () => void removeConversation(item) },
+    ]);
+  }
+  async function removeConversation(item: Conversation) {
+    try {
+      await deleteConversation(item.id);
+      const remaining = history.filter((chat) => chat.id !== item.id);
+      setHistory(remaining);
+      if (conversation?.id !== item.id) return;
+      setHistoryOpen(false);
+      if (remaining.length) await switchTo(remaining[0]);
+      else await newChat();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not delete conversation.");
     }
   }
   function changeDraft(value: string) {
@@ -808,7 +831,7 @@ function EmptyClassroomArtwork() {
             onPress={() => setGradeOpen(!gradeOpen)}
             style={styles.headerTitle}
           >
-            <Text style={styles.title}>Calcmate</Text>
+            <Text style={styles.title}>{studentMode ? "StudentAI" : "Calcmate"}</Text>
             <View style={styles.gradePill}>
               <Text style={styles.gradePillText}>Grade {grade} · Maths</Text>
               <Ionicons name={gradeOpen ? "chevron-up" : "chevron-down"} size={11} color={P.gold} />
@@ -817,7 +840,7 @@ function EmptyClassroomArtwork() {
 
           <View style={[styles.headerSide, { justifyContent: "flex-end" }]}>
             {!embedded ? (
-              <IconAction name="time-outline" label="Conversation history" onPress={() => { Keyboard.dismiss(); setHistoryOpen(true); }} />
+              <IconAction name="time-outline" label={studentMode ? "Student chat history" : "Conversation history"} onPress={() => { Keyboard.dismiss(); setHistoryOpen(true); }} />
             ) : null}
             <IconAction name="create-outline" label="New chat" onPress={() => void newChat()} disabled={loading} />
           </View>
@@ -997,14 +1020,14 @@ function EmptyClassroomArtwork() {
       <Modal visible={historyOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setHistoryOpen(false)}>
         <SafeAreaView style={styles.safe}>
           <View style={styles.historyHeader}>
-            <Text style={styles.historyHeading}>Conversations</Text>
+            <Text style={styles.historyHeading}>{studentMode ? `${studentName} · StudentAI` : "Conversations"}</Text>
             <IconAction name="close" label="Close history" onPress={() => setHistoryOpen(false)} />
           </View>
           <Pressable style={styles.historyNew} onPress={() => void newChat()} accessibilityRole="button">
             <View style={styles.historyNewIcon}>
               <Ionicons name="add" size={18} color="#F3E2AE" />
             </View>
-            <Text style={styles.historyNewText}>New chat</Text>
+            <Text style={styles.historyNewText}>{studentMode ? `New ${studentName} chat` : "New chat"}</Text>
           </Pressable>
           <FlatList
             data={history}
@@ -1013,22 +1036,34 @@ function EmptyClassroomArtwork() {
             renderItem={({ item }) => {
               const selected = item.id === conversation?.id;
               return (
-                <Pressable
-                  onPress={() => void switchTo(item)}
-                  accessibilityRole="button"
-                  style={[styles.historyItem, selected && styles.historyItemActive]}
-                >
+                <View style={[styles.historyItem, selected && styles.historyItemActive]}>
+                  <Pressable
+                    onPress={() => void switchTo(item)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open chat ${item.title}`}
+                    style={styles.historyOpen}
+                  >
                   <Text numberOfLines={2} style={styles.historyTitle}>
                     {item.title}
                   </Text>
                   <Text style={styles.historyMeta}>
                     Grade {item.grade} Maths · {item.updated_at.slice(0, 10)}
                   </Text>
-                </Pressable>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => confirmDelete(item)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Delete chat ${item.title}`}
+                    hitSlop={8}
+                    style={styles.historyDelete}
+                  >
+                    <Ionicons name="trash-outline" size={19} color={P.danger} />
+                  </Pressable>
+                </View>
               );
             }}
           />
-          <Text style={styles.historyFoot}>Each question is answered separately; earlier messages are not included.</Text>
+          <Text style={styles.historyFoot}>{studentMode ? "This student's saved conversations stay here. Reopen any chat to continue." : "Each question is answered separately; earlier messages are not included."}</Text>
         </SafeAreaView>
       </Modal>
     </SafeAreaView>
@@ -1323,12 +1358,16 @@ const styles = StyleSheet.create({
   },
   historyNewText: { fontSize: 15, fontWeight: "600", color: P.ink },
   historyItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 2,
     paddingHorizontal: 12,
-    paddingVertical: 14,
+    paddingVertical: 6,
     borderRadius: 14,
-    gap: 5,
   },
   historyItemActive: { backgroundColor: P.goldSoft },
+  historyOpen: { flex: 1, minHeight: 48, justifyContent: "center", gap: 5 },
+  historyDelete: { width: 44, height: 44, alignItems: "center", justifyContent: "center", marginLeft: 8 },
   historyTitle: { fontSize: 15, lineHeight: 21, fontWeight: "600", color: P.ink },
   historyMeta: { fontSize: 12, color: P.muted },
   historyFoot: { padding: 20, fontSize: 12, lineHeight: 17, color: P.muted, textAlign: "center" },

@@ -34,6 +34,7 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" options={{ headerShown:false }} />
         <Stack.Screen name="profile" options={{ title:"Teacher Profile" }} />
         <Stack.Screen name="chatbot" options={{ title:"AI Assistant",headerShown:false }} />
+        <Stack.Screen name="student-ai" options={{title:"StudentAI",headerShown:false,animation:"slide_from_right"}} />
         <Stack.Screen name="students/new" options={{ title:"Add Student" }} />
         <Stack.Screen name="attendance" options={{title:"Class attendance"}} />
         <Stack.Screen name="students/[id]" options={{ title:"Student Details" }} />

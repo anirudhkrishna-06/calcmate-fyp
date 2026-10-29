@@ -416,7 +416,17 @@ def _classify_deterministic(text: str, request: CopilotRequest) -> IntentResult:
     # Student-thread prompts are intentionally resolved before broad activity
     # and classroom patterns. The student_id is the authoritative scope; the
     # teacher does not need to repeat the learner's name in follow-ups.
-    if request.student_id:
+    if request.student_id and request.screen_context == "student_copilot" and not re.search(r"\b(?:students|learners|children|classroom|whole class|all grades|other students)\b", text, re.I):
+        if re.search(r"\b(?:what should .*teach|what .*teach .*next|teach .*next|what next|next step|recommend|suggest)", text, re.I):
+            return IntentResult(intent=CopilotIntent.GET_STUDENT_PROGRESS, parameters=params)
+        if re.search(r"\b(?:which concepts?|what concepts?|support|struggl|progress|doing|assessments?|marks?|scores?)\b", text, re.I):
+            if _matches_any(text, _DIFFICULTY_PATTERNS):
+                return IntentResult(intent=CopilotIntent.EXPLAIN_LEARNING_DIFFICULTY, parameters=params)
+            if re.search(r"\b(?:assessments?|marks?|scores?|history|recent|last)\b", text, re.I):
+                classified = __import__("src.classroom_queries", fromlist=["classify_record_query"]).classify_record_query(text, request, params)
+                if classified is not None:
+                    return classified
+            return IntentResult(intent=CopilotIntent.GET_STUDENT_PROGRESS, parameters=params)
         if _matches_any(text, _DIFFICULTY_PATTERNS) or re.search(r"\b(?:why|diagnos\w*|struggl\w*)\b", text, re.I):
             return IntentResult(intent=CopilotIntent.EXPLAIN_LEARNING_DIFFICULTY, parameters=params)
         if re.search(r"\b(?:next lesson|what should .*teach|what .*teach .*next|activity|drill|practice)\b", text, re.I):

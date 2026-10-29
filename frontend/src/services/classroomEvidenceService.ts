@@ -3,7 +3,7 @@ import { requireSession } from './authService';
 import { curriculumVersion } from '../data/curriculum';
 import { estimatorVersion } from './learnerEstimator';
 
-export async function readClassroomEvidence(grades:number[],asOf=today()){
+export async function readClassroomEvidence(grades:number[],asOf=today(),studentContextId?:string){
  const scope=await requireSession();
  return withTransaction(async tx=>{
   await assertScope(tx,scope);
@@ -18,8 +18,12 @@ export async function readClassroomEvidence(grades:number[],asOf=today()){
     for(const block of saved.blocks)if(['completed','postponed'].includes(block.status))for(const a of block.activities)if(a.conceptId&&grades.includes(a.grade))decisions.set(a.conceptId,block.status);
   }
   const localRevision=Number((await tx.getFirstAsync<{value:string}>("SELECT value FROM app_meta WHERE key=?",`classroom.revision:${scope.workspaceId}`))?.value??0);
+  if(studentContextId&&!students.some(s=>s.id===studentContextId))throw new Error('Selected student is outside the classroom evidence scope.');
+  const studentContext=studentContextId?students.find(s=>s.id===studentContextId):undefined;
+  const observations=studentContext&&studentContextId?await tx.getAllAsync<{note:string}>('SELECT note FROM observations WHERE workspace_id=? AND student_id=? ORDER BY created_at DESC,id DESC LIMIT 100',scope.workspaceId,studentContextId):[];
   const evidence={local_revision:localRevision,deferred_concepts:[...decisions].filter(([,status])=>status==='postponed').map(([id])=>id).sort(),version:1 as const,workspace_id:scope.workspaceId,captured_at:new Date().toISOString(),as_of:asOf,curriculum_version:curriculumVersion,estimator_version:estimatorVersion,
-   students:students.map(({id,name,grade})=>({id,name,grade})),
+   student_context_id:studentContextId,student_context:studentContext?{name:studentContext.name,grade:studentContext.grade,roll:studentContext.roll,observations:observations.map(o=>o.note)}:undefined,
+   students:students.map(({id,name,grade})=>({id,name,grade,observations:id===studentContextId?observations.map(o=>o.note):[]})),
    assessments:assessments.map(({id,student_id,concept_id,date,score,maximum,created_at,updated_at})=>({id,student_id,concept_id,date,score,maximum,created_at,updated_at})),
    attendance:attendance.map(({student_id,date,status})=>({student_id,date,status}))};
   if(students.length>500||assessments.length>12000||attendance.length>20000||JSON.stringify(evidence).length>2*1024*1024)throw new Error('Classroom evidence exceeds the server size limit. The request has not been sent.');

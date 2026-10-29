@@ -14,9 +14,11 @@ export async function chatScope():Promise<Scope> {
   }).catch(error => { initialized.delete(scope.workspaceId); throw error; }));
   await initialized.get(scope.workspaceId); return scope;
 }
-export async function listConversations():Promise<Conversation[]> {
+export async function listConversations(studentId?:string):Promise<Conversation[]> {
   const scope=await chatScope();
-  return withTransaction(async tx => tx.getAllAsync<Conversation>("SELECT * FROM conversations WHERE workspace_id=? ORDER BY updated_at DESC,id DESC",scope.workspaceId));
+  return withTransaction(async tx => studentId
+    ? tx.getAllAsync<Conversation>("SELECT * FROM conversations WHERE workspace_id=? AND student_id=? ORDER BY updated_at DESC,id DESC",scope.workspaceId,studentId)
+    : tx.getAllAsync<Conversation>("SELECT * FROM conversations WHERE workspace_id=? AND student_id IS NULL ORDER BY updated_at DESC,id DESC",scope.workspaceId));
 }
 export async function createConversation(grade=currentGrade()):Promise<Conversation> {
   if (![1,2,3,4,5].includes(grade)) throw new Error("Choose a grade from 1 to 5.");
@@ -29,18 +31,40 @@ export async function getOrCreateStudentConversation(studentId:string, studentNa
   if (!studentId.trim() || !studentName.trim()) throw new Error("Student context is required for this Copilot thread.");
   if (![1,2,3,4,5].includes(grade)) throw new Error("Choose a grade from 1 to 5.");
   const scope=await chatScope();
-  const existing=await withTransaction(async tx => tx.getFirstAsync<Conversation>("SELECT * FROM conversations WHERE workspace_id=? AND student_id=? ORDER BY updated_at DESC LIMIT 1",scope.workspaceId,studentId));
+  const existing=await withTransaction(async tx => tx.getFirstAsync<Conversation>("SELECT * FROM conversations WHERE workspace_id=? AND student_id=? AND id LIKE 'student-%' ORDER BY updated_at DESC LIMIT 1",scope.workspaceId,studentId));
   if(existing){ await selectConversation(existing.id); return existing; }
   const now=new Date().toISOString();
-  const conversation:Conversation={id:`student-${studentId}`,workspace_id:scope.workspaceId,title:`${studentName} — AI Copilot`,grade:grade as Conversation["grade"],student_id:studentId,created_at:now,updated_at:now};
+  const current=await withTransaction(async tx=>tx.getFirstAsync<{grade:number}>('SELECT grade FROM students WHERE workspace_id=? AND id=?',scope.workspaceId,studentId));
+  if(!current)throw new Error("Student not found.");
+  const conversation:Conversation={id:newId(),workspace_id:scope.workspaceId,title:studentName,grade:current.grade as Conversation["grade"],student_id:studentId,created_at:now,updated_at:now};
   await withTransaction(async tx => { await tx.runAsync("INSERT INTO conversations(id,workspace_id,title,grade,student_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",conversation.id,scope.workspaceId,conversation.title,grade,studentId,now,now); });
   await selectConversation(conversation.id); return conversation;
+}
+export async function createStudentConversation(studentId:string,studentName:string,grade:number):Promise<Conversation> {
+  if(!studentId.trim()||!studentName.trim())throw new Error("Student context is required for this chat.");
+  if(![1,2,3,4,5].includes(grade))throw new Error("Choose a grade from 1 to 5.");
+  const scope=await chatScope();const now=new Date().toISOString();
+  const current=await withTransaction(async tx=>tx.getFirstAsync<{grade:number}>('SELECT grade FROM students WHERE workspace_id=? AND id=?',scope.workspaceId,studentId));
+  if(!current)throw new Error("Student not found.");
+  const conversation:Conversation={id:newId(),workspace_id:scope.workspaceId,title:studentName,grade:current.grade as Conversation["grade"],student_id:studentId,created_at:now,updated_at:now};
+  await withTransaction(async tx=>{if(!await tx.getFirstAsync("SELECT id FROM students WHERE workspace_id=? AND id=?",scope.workspaceId,studentId))throw new Error("Student not found.");await tx.runAsync("INSERT INTO conversations(id,workspace_id,title,grade,student_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",conversation.id,scope.workspaceId,conversation.title,grade,studentId,now,now);});
+  await selectConversation(conversation.id);return conversation;
 }
 export async function selectConversation(id:string) {
   const scope=await chatScope();
   await withTransaction(async tx => {
     if (!await tx.getFirstAsync("SELECT id FROM conversations WHERE workspace_id=? AND id=?",scope.workspaceId,id)) throw new Error("Conversation not found.");
     await tx.runAsync("INSERT INTO app_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",`chat.active:${scope.workspaceId}`,id);
+  });
+}
+export async function deleteConversation(id:string):Promise<void> {
+  const scope=await chatScope();
+  await withTransaction(async tx=>{
+    const conversation=await tx.getFirstAsync<Conversation>("SELECT * FROM conversations WHERE workspace_id=? AND id=?",scope.workspaceId,id);
+    if(!conversation)throw new Error("Conversation not found.");
+    await tx.runAsync("DELETE FROM conversations WHERE workspace_id=? AND id=?",scope.workspaceId,id);
+    const active=await tx.getFirstAsync<{value:string}>("SELECT value FROM app_meta WHERE key=?",`chat.active:${scope.workspaceId}`);
+    if(active?.value===id)await tx.runAsync("DELETE FROM app_meta WHERE key=?",`chat.active:${scope.workspaceId}`);
   });
 }
 export async function restoreConversation():Promise<Conversation> {
@@ -69,21 +93,26 @@ export async function prepareMessage(
   const scope = await chatScope();
   const id = newId();
   const now = new Date().toISOString();
+  const conversation = await withTransaction(async tx => tx.getFirstAsync<Conversation>("SELECT * FROM conversations WHERE workspace_id=? AND id=?",scope.workspaceId,conversationId));
+  if (!conversation) throw new Error("Conversation not found.");
+  const studentId = conversation.student_id ?? context?.student_id;
   // Stage 3 & Stage 1: attach structured copilot context (student_id, concept_id, screen_context)
   const request: ChatRequest = buildCopilotRequest(text, {
     grade: grade as Grade,
     workspaceId: scope.workspaceId,
-    studentId: context?.student_id,
+    studentId,
     conceptId: context?.concept_id,
-    screenContext: context?.screen_context,
+    screenContext: studentId ? "student_copilot" : context?.screen_context,
   });
+  const priorMessages = await withTransaction(async tx => tx.getAllAsync<{role:"teacher"|"assistant";text:string}>(
+    "SELECT m.role,m.text FROM messages m JOIN message_details d ON d.workspace_id=m.workspace_id AND d.message_id=m.id WHERE m.workspace_id=? AND d.conversation_id=? AND d.status='completed' ORDER BY m.created_at DESC,m.rowid DESC LIMIT 12",
+    scope.workspaceId,conversationId));
+  request.conversation_history = priorMessages.reverse().map(m=>({role:m.role==="assistant"?"assistant" as const:"user" as const,content:m.text.slice(0,1200)}));
   await withTransaction(async tx => {
-    const conversation=await tx.getFirstAsync<Conversation>("SELECT * FROM conversations WHERE workspace_id=? AND id=?",scope.workspaceId,conversationId);
-    if (!conversation) throw new Error("Conversation not found.");
     if (await tx.getFirstAsync("SELECT message_id FROM message_details WHERE workspace_id=? AND conversation_id=? AND status='pending'",scope.workspaceId,conversationId)) throw new Error("A request is already pending in this conversation.");
     await tx.runAsync("INSERT INTO messages VALUES(?,?,?,?,?,?)",id,scope.workspaceId,"teacher",text,now,now);
     await tx.runAsync("INSERT INTO message_details VALUES(?,?,?,?,?,?,?,?)",id,scope.workspaceId,conversationId,"pending",JSON.stringify(request),"[]",null,null);
-    await tx.runAsync("UPDATE conversations SET title=CASE WHEN title='New chat' THEN ? ELSE title END,grade=?,updated_at=? WHERE workspace_id=? AND id=?",text.slice(0,65),grade,now,scope.workspaceId,conversationId);
+    await tx.runAsync("UPDATE conversations SET title=CASE WHEN student_id IS NULL AND title='New chat' THEN ? ELSE title END,grade=?,updated_at=? WHERE workspace_id=? AND id=?",text.slice(0,65),grade,now,scope.workspaceId,conversationId);
   });
   return (await conversationMessages(conversationId)).find(m => m.id===id)!;
 }

@@ -23,7 +23,7 @@ $env:CALCMATE_ALLOW_INSECURE_AUTH='true'
 $env:PYTHONUTF8='1'
 $env:PYTHONIOENCODING='utf-8'
 if(!$env:CALCMATE_RAG_MODEL){$env:CALCMATE_RAG_MODEL='calcmate:latest'}
-if(!$env:CALCMATE_GENERATION_TIMEOUT){$env:CALCMATE_GENERATION_TIMEOUT='180'}
+if([string]::IsNullOrWhiteSpace($env:CALCMATE_GENERATION_TIMEOUT) -or [double]$env:CALCMATE_GENERATION_TIMEOUT -lt 210){$env:CALCMATE_GENERATION_TIMEOUT='210'}
 $env:EXPO_PUBLIC_API_BASE_URL="http://${LanIp}:${ApiPort}"
 $apiLog=Join-Path $repoRoot 'data\presentation-api.log'
 $apiErrorLog=Join-Path $repoRoot 'data\presentation-api-error.log'
@@ -31,7 +31,7 @@ $probe=[System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Any,$ApiPor
 try{$probe.Start()}catch{throw "API port $ApiPort is already in use. Stop that server or choose -ApiPort."}finally{$probe.Stop()}
 $expoProbe=[System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Any,$ExpoPort)
 try{$expoProbe.Start()}catch{throw "Expo port $ExpoPort is already in use. Choose -ExpoPort."}finally{$expoProbe.Stop()}
-$apiProcess=Start-Process -FilePath $pythonPath -ArgumentList @('-u','-m','src.api','--host','0.0.0.0','--port',"$ApiPort") -WorkingDirectory $repoRoot -RedirectStandardOutput $apiLog -RedirectStandardError $apiErrorLog -WindowStyle Hidden -PassThru
+$apiProcess=Start-Process -FilePath $pythonPath -ArgumentList @('-u','-m','src.api','--host','0.0.0.0','--port',"$ApiPort") -WorkingDirectory $repoRoot -RedirectStandardOutput $apiLog -RedirectStandardError $apiErrorLog -WindowStyle Normal -PassThru
 try{
   $ready=$false
   for($attempt=0;$attempt -lt 30;$attempt++){
@@ -41,6 +41,7 @@ try{
   if(!$ready){throw "API did not start. Read $apiErrorLog"}
   Get-Content -LiteralPath $apiErrorLog | Where-Object { $_ -match 'administrator password|approval inbox' } | Write-Host
   Write-Host "API logs: $apiErrorLog"
+  Write-Host 'Backend is running in its own terminal window; request progress is printed there.'
   Push-Location -LiteralPath $frontendPath
   try{npm.cmd start -- --lan --port $ExpoPort}finally{Pop-Location}
 }finally{if(!$apiProcess.HasExited){Stop-Process -Id $apiProcess.Id}}

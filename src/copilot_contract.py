@@ -67,6 +67,11 @@ class CopilotRequest(BaseModel):
     # Which screen the teacher is currently on (for routing hints).
     screen_context: Optional[str] = Field(default=None)
 
+    # Profile context for the dedicated student-aware chat. Kept separate from
+    # the learner evidence snapshot so the composer can personalize language.
+    student_profile_context: Optional[dict[str, Any]] = Field(default=None)
+    conversation_history: list[dict[str, str]] = Field(default_factory=list, max_length=12)
+
     # Whether to use the LLM for response composition.
     use_llm: bool = Field(default=True)
 

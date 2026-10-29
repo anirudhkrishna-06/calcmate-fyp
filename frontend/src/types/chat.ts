@@ -13,6 +13,7 @@ export type ChatRequest = {
   concept_id?: string;
   screen_context?: string;
   classroom_evidence?:ClassroomEvidence;
+  conversation_history?:{role:"user"|"assistant";content:string}[];
 };
 export type RagChunk = { source_url?:string|null;source_pages?:string|null;resource_kind?:string; chunk_id:number; text:string; grade:number; subject:string; source_pdf:string; chunk_index:number; score:number; used_fallback:boolean };
 /** Stage 4: structured action signal from backend to invoke the on-device scheduler. */

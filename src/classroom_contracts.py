@@ -26,6 +26,7 @@ class StudentEvidence(EvidenceRow):
     id: str = Field(min_length=1, max_length=160)
     name: str = Field(min_length=1, max_length=100)
     grade: int = Field(ge=1, le=5)
+    observations: list[str] = Field(default_factory=list, max_length=100)
 
 
 class AssessmentEvidence(EvidenceRow):
@@ -69,6 +70,8 @@ class ClassroomEvidence(EvidenceRow):
     students: list[StudentEvidence] = Field(max_length=500)
     assessments: list[AssessmentEvidence] = Field(max_length=12000)
     attendance: list[AttendanceEvidence] = Field(max_length=20000)
+    student_context_id: str | None = Field(default=None, max_length=160)
+    student_context: dict | None = None
     deferred_concepts: list[str] = Field(default_factory=list,max_length=100)
 
     @model_validator(mode="after")
@@ -82,6 +85,17 @@ class ClassroomEvidence(EvidenceRow):
         for a in self.assessments:
             if a.student_id not in ids or a.concept_id not in kg or a.date > self.as_of:
                 raise ValueError("Assessment is outside the supplied classroom or evidence date")
+        if self.student_context_id and self.student_context_id not in ids:
+            raise ValueError("Selected student is outside the supplied classroom")
+        if self.student_context and self.student_context_id not in ids:
+            raise ValueError("Student context requires a selected student in the supplied classroom")
+        if self.student_context:
+            context = self.student_context
+            selected = next((s for s in self.students if s.id == self.student_context_id), None)
+            if not selected or context.get("name") != selected.name or context.get("grade") != selected.grade:
+                raise ValueError("Selected student context does not match the classroom record")
+        if self.student_context and len(json.dumps(self.student_context, ensure_ascii=False)) > 12000:
+            raise ValueError("Selected student context exceeds the evidence limit")
         if any(c not in kg for c in self.deferred_concepts):
             raise ValueError("Deferred instruction references an unknown concept")
         seen = set()
@@ -139,6 +153,7 @@ def evidence_database(evidence: ClassroomEvidence):
       CREATE TABLE attendance(student_id TEXT,workspace_id TEXT,date TEXT,status TEXT);
       CREATE TABLE assessments(id TEXT,workspace_id TEXT,student_id TEXT,concept_id TEXT,
         date TEXT,score REAL,maximum REAL,created_at TEXT,updated_at TEXT);
+      CREATE TABLE observations(id TEXT,workspace_id TEXT,student_id TEXT,note TEXT,created_at TEXT,updated_at TEXT);
       CREATE TABLE classroom_meta(key TEXT PRIMARY KEY,value TEXT);
       CREATE TABLE learner_concept_states(student_id TEXT,concept_id TEXT,workspace_id TEXT,
         mastery_estimate REAL,evidence_count INTEGER,last_evidence_at TEXT,state_status TEXT,
@@ -150,6 +165,12 @@ def evidence_database(evidence: ClassroomEvidence):
     conn.executemany("INSERT INTO concepts VALUES(?,?,?,?)", [(cid, w, n.get("concept", cid), int(n["grade"])) for cid, n in kg.nodes(data=True)])
     conn.executemany("INSERT INTO attendance VALUES(?,?,?,?)",[(a.student_id,w,str(a.date),a.status) for a in evidence.attendance])
     conn.executemany("INSERT INTO assessments VALUES(?,?,?,?,?,?,?,?,?)",[(a.id,w,a.student_id,a.concept_id,str(a.date),a.score,a.maximum,a.created_at,a.updated_at) for a in evidence.assessments])
+    for index, student in enumerate(evidence.students):
+        if student.id == evidence.student_context_id and evidence.student_context:
+            conn.executemany("INSERT INTO observations VALUES(?,?,?,?,?,?)", [
+                (f"context-{student.id}-{i}", w, student.id, note, evidence.captured_at.isoformat(), evidence.captured_at.isoformat())
+                for i, note in enumerate(evidence.student_context.get("observations", []))
+            ])
     conn.executemany("INSERT INTO classroom_meta VALUES(?,?)",[("as_of",str(evidence.as_of)),("estimator_version",evidence.estimator_version)])
     grouped={}
     for a in evidence.assessments:

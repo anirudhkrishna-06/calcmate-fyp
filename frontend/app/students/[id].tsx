@@ -305,18 +305,7 @@ export default function StudentDetailsScreen() {
             studentName={student.name}
             grade={student.grade}
             knowledge={kv ?? null}
-            onSubmit={(question, conceptId) => router.push({
-              pathname: "/chatbot",
-              params: {
-                grade: String(student.grade),
-                studentId: student.id,
-                studentName: student.name,
-                studentThread: "true",
-                conceptId,
-                screenContext: "student_copilot",
-                prompt: question,
-              },
-            })}
+            onSubmit={() => router.push({pathname:"/student-ai",params:{studentId:student.id,studentName:student.name,studentThread:"true",grade:String(student.grade)}})}
           />
 
           {/* ── Summary stats ── */}

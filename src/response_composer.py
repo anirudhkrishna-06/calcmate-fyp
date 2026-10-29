@@ -16,6 +16,7 @@ Two modes:
 from __future__ import annotations
 
 import os
+import json
 from typing import Optional
 
 from src.copilot_contract import (
@@ -162,15 +163,44 @@ You have been given structured, factual classroom evidence. Your job is to write
 Strict guardrails:
 - Do NOT alter any numbers, student names, concept names, or mastery percentages.
 - Do NOT invent student data or false citations.
+- Refer to the selected learner by name. Use he/she only when the teacher's records explicitly establish those pronouns; otherwise use the student's name or they.
+- Refer to the selected learner by the name in the student context. Use he/she only when the teacher's records explicitly establish those pronouns; otherwise use the student's name or they.
 
 Facts:
 {facts}
 
 Teacher question: {question}
 
+Student context (when present): {student_context}
+
 Write an uplifting, supportive, and actionable answer for the teacher using the facts above. Highlight clear next steps and celebrate progress! Plain English, encouraging tone.
 
 Answer:"""
+
+_STUDENT_AI_PROMPT = """\
+You are StudentAI, a skilled primary Maths learning-support partner for a teacher in India.
+
+Help the teacher make a thoughtful next move for this one learner. Be warm, specific, and practical. Explain what the classroom evidence suggests, what it does not establish, and offer a small actionable teaching move plus a way to check understanding when that fits the question.
+
+Evidence rules:
+- Use only the supplied student profile, assessment records, attendance, teacher notes, curriculum facts, and operation result. Do not invent history, causes, abilities, diagnoses, or personal details.
+- Distinguish recorded scores from estimated mastery and from your teaching interpretation. Cite dates and scores exactly when useful; don't imply a single score proves mastery.
+- If evidence is sparse or absent, say so and suggest one low effort diagnostic check before making a strong recommendation.
+- Keep the response focused on the teacher's actual question. Avoid generic praise or filler. Give examples at the learner's grade level.
+- Refer to the student by name; use he/she only if the supplied profile explicitly records pronouns, otherwise use the name or they.
+
+Student profile and complete available evidence:
+{student_context}
+
+Recent messages in this same student chat (use only to resolve follow-ups):
+{conversation_history}
+
+Structured operation result:
+{facts}
+
+Teacher's question: {question}
+
+Answer with a clear recommendation and its evidence. Use concise headings or steps only when they make the answer easier to act on."""
 
 
 def compose_with_llm(
@@ -189,8 +219,9 @@ def compose_with_llm(
     if operation_result.status in (OperationStatus.ERROR, OperationStatus.UNAVAILABLE):
         return compose_deterministic(operation_result, intent_result, request, rag_answer, rag_chunks)
 
-    # For pure RAG intents, the LLM already ran in copilot.py
-    if intent_result.intent in (CopilotIntent.GENERAL_QUESTION, CopilotIntent.EXPLAIN_CONCEPT) and rag_answer:
+    is_student_ai = request.screen_context == "student_copilot" and bool(request.student_id)
+    # For ordinary pure RAG intents, the curriculum model already wrote the answer.
+    if not is_student_ai and intent_result.intent in (CopilotIntent.GENERAL_QUESTION, CopilotIntent.EXPLAIN_CONCEPT) and rag_answer:
         return compose_deterministic(operation_result, intent_result, request, rag_answer, rag_chunks)
 
     facts_parts = []
@@ -208,6 +239,17 @@ def compose_with_llm(
         )
     if operation_result.limitations:
         facts_parts.append(f"Limitations: {'; '.join(operation_result.limitations)}")
+    if is_student_ai and rag_answer:
+        facts_parts.append("Grounded curriculum explanation: " + rag_answer)
+
+    if operation_result.structured_data:
+        structured = operation_result.structured_data
+        if hasattr(structured, "model_dump"):
+            structured = structured.model_dump(mode="json")
+        try:
+            facts_parts.append("Structured evidence data: " + json.dumps(structured, ensure_ascii=False, default=str))
+        except (TypeError, ValueError):
+            facts_parts.append("Structured evidence data: " + str(structured))
 
     if not facts_parts:
         return compose_deterministic(operation_result, intent_result, request, rag_answer, rag_chunks)
@@ -216,13 +258,18 @@ def compose_with_llm(
         import ollama
         from src.copilot import resolve_active_model
         _model = resolve_active_model(model or os.getenv("CALCMATE_RAG_MODEL"))
-        client = ollama.Client(timeout=float(os.getenv("CALCMATE_GENERATION_TIMEOUT", "65")))
-        prompt = _LLM_COMPOSE_PROMPT.format(
-            facts="\n".join(facts_parts),
-            question=request.message,
-        )
+        client = ollama.Client(timeout=float(os.getenv("CALCMATE_GENERATION_TIMEOUT", "210")))
+        student_context = getattr(request,"student_profile_context",None)
+        prompt = (_STUDENT_AI_PROMPT.format(
+            facts="\n".join(facts_parts), question=request.message,
+            student_context=json.dumps(student_context or {}, ensure_ascii=False, default=str),
+            conversation_history=json.dumps(getattr(request,"conversation_history",[]), ensure_ascii=False, default=str),
+        ) if is_student_ai else _LLM_COMPOSE_PROMPT.format(
+            facts="\n".join(facts_parts), question=request.message,
+            student_context=json.dumps(student_context, ensure_ascii=False, default=str) if student_context else "No selected student profile.",
+        ))
         resp = client.generate(model=_model, prompt=prompt,
-                               options={"temperature": 0.2, "num_predict": 200})
+                               options={"temperature": 0.25 if is_student_ai else 0.2, "num_predict": 280 if is_student_ai else 200})
         llm_answer = resp.get("response", "").strip()
         if not llm_answer:
             raise ValueError("Empty LLM response")
@@ -243,6 +290,10 @@ def compose_with_llm(
             used_llm=True,
             chunks=rag_chunks or [],
         )
-    except Exception:
-        return compose_deterministic(operation_result, intent_result, request, rag_answer, rag_chunks)
+    except Exception as exc:
+        import logging
+        logging.getLogger("uvicorn.error").warning("Student-aware response generation failed; using grounded fallback (%s: %s)", type(exc).__name__, str(exc)[:300])
+        fallback = compose_deterministic(operation_result, intent_result, request, rag_answer, rag_chunks)
+        fallback.limitations = list(fallback.limitations) + ["The local LLM did not finish this response. This is a deterministic summary of recorded classroom evidence, not an LLM-generated answer."]
+        return fallback
 

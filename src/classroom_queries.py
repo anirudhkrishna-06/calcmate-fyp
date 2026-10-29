@@ -54,6 +54,12 @@ def bind_student_context(request):
     elif re.search(r"'s\s+(?:mastery|state|progress|knowledge|understanding|scores?)\b", normalize(request.message), re.I) and not re.search(r"\bthis student's\b", normalize(request.message), re.I):
         # An explicit unknown name must not inherit another learner's screen ID.
         request.student_id = None
+    elif getattr(request, "screen_context", None) == "student_copilot" and request.student_id and not re.search(r"\b(?:students|learners|children|classroom|whole class|all grades)\b", request.message, re.I):
+        # Keep implicit pronoun and follow-up questions bound to the selected profile.
+        return
+    elif getattr(request, "screen_context", None) == "student_copilot" and request.student_id and not re.search(r"\b(?:students|learners|children|classroom|whole class|all grades)\b", request.message, re.I):
+        # Keep implicit pronoun/follow-up questions bound to the selected learner.
+        return
 
 
 def concept_ids(phrase, grade):
@@ -82,18 +88,19 @@ def classify_record_query(text, request, params):
     text = normalize(text)
     lower = text.casefold()
     params = dict(params)
+    student_thread = bool(request.student_id and request.screen_context == "student_copilot")
     params["all_grades"] = bool(re.search(r"\b(all grades|across (?:all )?grades|entire classroom|whole school)\b", lower))
     kind = None
     intent = I.CLASSROOM_RECORD_QUERY
     latest = bool(re.search(r"\b(last|latest|most recent|recent)\s+(?:recorded\s+)?(assessment|test|exam|marks?|scores?|results?)\b", lower))
-    if re.search(r"\b(?:is|are)\s+(?:the\s+)?(?:grade|group|class|students)\b.*\bready\b", lower):
+    if not student_thread and re.search(r"\b(?:is|are)\s+(?:the\s+)?(?:grade|group|class|students)\b.*\bready\b", lower):
         return None
     if re.search(r"\b(?:why|explain)\b.*\b(?:struggl\w*|difficulty|difficulties)\b", lower):
         return None
     is_support = bool(re.search(r"\b(?:need(?:s)?\s+(?:more\s+)?(?:support|help|revision)|struggl\w*|doing well|ready|mastered|unassessed|not (?:been )?assessed|below|less than|under\s+\d+|weak)\b", lower))
     if re.search(r"\b(?:mark|update|delete|remove|change|save|set)\b.*\b(?:attendance|present|absent|marks|scores|students)\b", lower):
         kind = "read_only"
-    elif re.search(r"\b(?:phone number|mobile number|address|parent'?s? (?:name|number)|medical|diagnos\w*)\b", lower):
+    elif re.search(r"\b(?:phone number|mobile number|address|parent'?s? (?:name|number)|medical)\b", lower):
         kind = "unavailable_field"
     elif re.search(r"\b(?:why|reason)\b.*\b(?:absent|absence|late)\b", lower):
         kind = "absence_reason"
@@ -103,6 +110,8 @@ def classify_record_query(text, request, params):
         kind = "comparison"
     elif not is_support and re.search(r"\b(?:how many|number of|count|total)\s+(?:the\s+)?(?:students|learners|children)\b", lower):
         kind = "count"
+    elif student_thread and not re.search(r"\b(?:students|learners|children|classroom|whole class|all grades|other students)\b", lower) and re.search(r"\b(?:what should .*teach|what .*teach .*next|teach .*next|what next|next step|recommend|suggest|which concepts?|what concepts?|support|struggl|progress|doing|assessments?|marks?|scores?)\b", lower):
+        return None
     elif re.search(r"\b(?:last\s+(?:two|three|five|\d+)|assessment history|score history|scores? and dates?|marks? and dates?|when.*assess|latest assessment date)\b", lower) or (latest and not is_support):
         kind, intent = "history", I.GET_ASSESSMENT_HISTORY
     elif re.search(r"\b(?:performance|performing|how (?:is|are).*(?:doing|progressing)|class progress)\b", lower) and re.search(r"\b(?:students|learners|children|class|classroom|grade|group)\b", lower):
@@ -115,6 +124,10 @@ def classify_record_query(text, request, params):
         kind = "roster"
     if kind is None:
         return None
+    if student_thread and kind in {"history", "attendance", "state"}:
+        params["student_id"] = request.student_id
+        params["student_name"] = next((s["name"] for s in roster(request.workspace_id) if s["id"] == request.student_id), None)
+        params["grade"] = request.grade
     params.update(record_query=kind, latest_assessment=latest)
     if params.get("concept_phrase"):
         params["concept_ids"] = concept_ids(params["concept_phrase"], params["grade"])
@@ -150,6 +163,16 @@ def execute_record_query(intent, request):
     grade = p["grade"]
     students = all_students if p.get("all_grades") else [s for s in all_students if s["grade"] == grade]
     selected = named or [s for s in all_students if s["id"] == request.student_id]
+    if request.student_id and request.screen_context == "student_copilot" and not re.search(r"\b(?:other students|students|learners|children|classroom|whole class|all grades)\b", request.message, re.I):
+        selected = named or [s for s in all_students if s["id"] == request.student_id]
+        if selected:
+            students = selected
+            grade = selected[0]["grade"]
+    if request.student_id and request.screen_context == "student_copilot" and not p.get("all_grades"):
+        selected = named or [s for s in all_students if s["id"] == request.student_id]
+        if selected:
+            students = selected
+            grade = selected[0]["grade"]
     cids = p.get("concept_ids", [p["concept_id"]] if p.get("concept_id") else [])
     if p.get("concept_phrase") and not cids:
         return partial("No matching curriculum concept was identified. Please specify a valid concept or topic and grade.")
@@ -209,6 +232,23 @@ def execute_record_query(intent, request):
             return partial("No matching student was identified. Please specify the student's full name or select a student.")
         if kind == "comparison" and len(selected) < 2:
             return partial("Please specify two students to compare.")
+        if kind == "state" and not cids and request.student_id and request.screen_context == "student_copilot":
+            rows = assessments({request.student_id}, filter_concepts=False)
+            state_rows = [dict(r) for r in conn.execute("SELECT * FROM learner_concept_states WHERE workspace_id=? AND student_id=? ORDER BY state_status,concept_id", (w, request.student_id))]
+            supported = [r for r in state_rows if r["state_status"] == "needs_support"]
+            unknown = [r for r in state_rows if r["state_status"] == "unknown"]
+            name = selected[0]["name"]
+            result.update(student=selected[0],concept_states=state_rows,assessment_count=len(rows))
+            if not rows:
+                return ok(f"There are no assessment records for {name} yet, so I cannot infer which concepts need support. Record an assessment to build a grounded learning picture.", result,
+                          limitations=["No assessment evidence is available for this student."])
+            titles = {cid: data["concept"] for cid, data in load_kg().nodes(data=True)}
+            needs = ", ".join(titles.get(r["concept_id"], r["concept_id"]) for r in supported[:5]) or "no assessed concepts currently flagged as needing support"
+            not_assessed = ", ".join(titles.get(r["concept_id"], r["concept_id"]) for r in unknown[:5])
+            message = f"{name}: based on {len(rows)} recorded assessment(s), {needs}."
+            if not_assessed:
+                message += f" Evidence is still missing for concepts including {not_assessed}."
+            return ok(message, result)
         if kind != "history" and not cids:
             return partial("Please specify which concept or topic to check.")
         if kind == "history":
